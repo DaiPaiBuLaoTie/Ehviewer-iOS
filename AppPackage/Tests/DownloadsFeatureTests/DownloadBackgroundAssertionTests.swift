@@ -58,7 +58,7 @@ struct DownloadBackgroundAssertionTests: DownloadFeatureTestCase {
         _ = await context.manager.pause(gid: gid)
     }
 
-    @Test
+    @Test(.timeLimit(.minutes(1)))
     func testExpirationHandlerReleasesAssertion() async throws {
         let gid = "200004"
         let context = try await makeBlockingCoordinator(gid: gid, title: "Queued")
@@ -67,15 +67,13 @@ struct DownloadBackgroundAssertionTests: DownloadFeatureTestCase {
         await context.manager.scheduleNextIfNeeded()
         #expect(await context.manager.testingHasBackgroundAssertion())
 
+        var completions = context.spy.endEvents.makeAsyncIterator()
         context.spy.fireExpiration()
 
-        // The expiration handler releases the assertion on a detached task that nils the
-        // token *before* awaiting the MainActor `end` hop. Wait on `endCount` (the later
-        // of the two) rather than the token so the assertion below can't observe the
-        // in-between window where the token is already nil but `end` hasn't run yet.
-        try await waitUntil {
-            context.spy.endCount == 1
-        }
+        // Await the actual MainActor end callback instead of polling with a one-second deadline.
+        // The test's time limit still detects a missing callback without assuming CI scheduling speed.
+        let completion = await completions.next()
+        try #require(completion != nil, "Background assertion did not end.")
         #expect(context.spy.beginCount == 1)
         #expect(!(await context.manager.testingHasBackgroundAssertion()))
 
@@ -174,17 +172,6 @@ private extension DownloadBackgroundAssertionTests {
         )
     }
 
-    func waitUntil(
-        timeout: Duration = .seconds(1),
-        _ condition: @Sendable () async -> Bool
-    ) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
-        while await !condition(), clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(10))
-        }
-        try #require(await condition(), "Timed out waiting for condition.")
-    }
 }
 
 // MARK: - Spy
@@ -196,6 +183,16 @@ final class BackgroundTaskClientSpy: Sendable {
         var expirationHandler: (@Sendable () -> Void)?
     }
     private let state = Mutex(State())
+    let endEvents: AsyncStream<Void>
+    private let endContinuation: AsyncStream<Void>.Continuation
+
+    init() {
+        let (events, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        endEvents = events
+        endContinuation = continuation
+    }
+
+    deinit { endContinuation.finish() }
 
     var beginCount: Int { state.withLock { $0.beginCount } }
     var endCount: Int { state.withLock { $0.endCount } }
@@ -216,6 +213,7 @@ final class BackgroundTaskClientSpy: Sendable {
             },
             end: { _ in
                 self.state.withLock { $0.endCount += 1 }
+                self.endContinuation.yield(())
             }
         )
     }

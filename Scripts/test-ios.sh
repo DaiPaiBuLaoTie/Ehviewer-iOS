@@ -8,6 +8,7 @@ collect_test_summary() {
   if [ -d "$BUILD_ROOT/Tests.xcresult" ]; then
     xcrun xcresulttool get test-results summary --path "$BUILD_ROOT/Tests.xcresult" \
       > "$BUILD_ROOT/test-summary.json" || true
+    if [ -s "$BUILD_ROOT/test-summary.json" ]; then cat "$BUILD_ROOT/test-summary.json"; fi
   fi
 }
 trap collect_test_summary EXIT
