@@ -9,7 +9,9 @@ public enum SXJNetworkSettings {
     public static func parseHosts(_ text: String) throws -> [String: String] {
         var result: [String: String] = [:]
         for line in text.split(whereSeparator: \.isNewline) {
-            let content = line.split(separator: "#", maxSplits: 1).first.map(String.init) ?? ""
+            let content = line.split(
+                separator: "#", maxSplits: 1, omittingEmptySubsequences: false
+            ).first.map(String.init) ?? ""
             let parts = content.split(whereSeparator: \.isWhitespace).map(String.init)
             guard !parts.isEmpty else { continue }
             guard parts.count >= 2, IPv4Address(parts[0]) != nil || IPv6Address(parts[0]) != nil
@@ -34,7 +36,8 @@ public enum SXJNetworkSettings {
               url.user == nil, url.password == nil,
               url.path.isEmpty || url.path == "/", url.query == nil, url.fragment == nil
         else { throw ConfigurationError.invalidProxy }
-        let endpoint = NWEndpoint.hostPort(host: .name(host, nil), port: port)
+        let address = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(address), port: port)
         switch url.scheme?.lowercased() {
         case "http": return ProxyConfiguration(httpCONNECTProxy: endpoint)
         case "https": return ProxyConfiguration(httpCONNECTProxy: endpoint, tlsOptions: .init())

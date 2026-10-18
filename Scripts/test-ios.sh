@@ -13,7 +13,7 @@ if not phones:
     sys.exit("No available iPhone simulator on runner")
 print(phones[0]["udid"])
 ')"
-xcodebuild test \
+xcodebuild -quiet test \
   -project EhPanda.xcodeproj -scheme EhPanda \
   -testPlan FeatureTests \
   -destination "platform=iOS Simulator,id=$DEVICE_ID" \

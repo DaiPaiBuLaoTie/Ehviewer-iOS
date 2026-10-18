@@ -15,7 +15,16 @@ struct AboutView: View {
 
     var body: some View {
         Form {
-            Section {
+            Section("EhViewer SXJ iOS") {
+                Link("本工程源码", destination: Defaults.URL.github.appendingPathComponent("a9722007/Ehviewer-iOS"))
+                Link(
+                    "获取新版 IPA",
+                    destination: Defaults.URL.github.appendingPathComponent("a9722007/Ehviewer-iOS/actions")
+                )
+                Text("下载 Actions 中的未签名 IPA，使用自己的签名安装。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            Section("原生基础项目 EhPanda") {
                 ForEach(contacts) { contact in
                     LinkRow(urlString: contact.urlString, text: contact.text)
                 }
@@ -41,7 +50,7 @@ struct AboutView: View {
                 }
             }
         }
-        .navigationTitle(.ehPanda)
+        .navigationTitle("EhViewer SXJ")
         .toolbar {
             ToolbarItem(placement: .largeSubtitle) {
                 VStack(alignment: .leading) {

@@ -4,7 +4,8 @@ import Testing
 
 struct SXJNetworkSettingsTests {
     @Test func parsesMultipleDomainsAndComments() throws {
-        let hosts = try SXJNetworkSettings.parseHosts("127.0.0.1 example.org second.org # note\n::1 ipv6.example.org")
+        let text = "# comment only\n127.0.0.1 example.org second.org # note\n::1 ipv6.example.org"
+        let hosts = try SXJNetworkSettings.parseHosts(text)
         #expect(hosts["example.org"] == "127.0.0.1")
         #expect(hosts["second.org"] == "127.0.0.1")
         #expect(hosts["ipv6.example.org"] == "::1")

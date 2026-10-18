@@ -31,7 +31,7 @@ jobs:
           xcrun swift --version
           python3 Scripts/verify-source.py
           python3 -m unittest discover -s Scripts/tests -p 'test_*.py'
-          bash -n Scripts/build-unsigned.sh Scripts/package-unsigned.sh Scripts/test-ios.sh
+          bash -n Scripts/build-unsigned.sh Scripts/package-unsigned.sh Scripts/test-ios.sh Scripts/smoke-ios.sh
       - name: Resolve locked Swift packages
         run: |
           xcodebuild -resolvePackageDependencies \
@@ -40,6 +40,8 @@ jobs:
             -onlyUsePackageVersionsFromResolvedFile
       - name: Run iOS simulator tests
         run: bash Scripts/test-ios.sh
+      - name: Launch app on iPhone simulator
+        run: bash Scripts/smoke-ios.sh
       - name: Archive and package unsigned IPA
         run: bash Scripts/build-unsigned.sh
       - name: Upload unsigned IPA and checksums
@@ -60,6 +62,7 @@ jobs:
           path: |
             build/logs/
             build/*.xcresult
+            build/screenshots/
           if-no-files-found: ignore
           retention-days: 7
       - name: Build summary

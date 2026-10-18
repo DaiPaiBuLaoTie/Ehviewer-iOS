@@ -166,8 +166,14 @@ struct SettingReducerNavigationTests {
     @Test
     func generalFilePickedImportsAndStoresTagTranslator() async throws {
         let imported = TagTranslator(hasCustomTranslations: true)
+        let (completion, continuation) = AsyncStream<TagTranslator>.makeStream()
+        defer { continuation.finish() }
         let store = TestStore(initialState: .init(), reducer: SettingReducer.init) {
-            $0.fileClient.importTagTranslator = { _ in .success(imported) }
+            $0.fileClient.importTagTranslator = { _ in
+                var iterator = completion.makeAsyncIterator()
+                guard let translator = await iterator.next() else { return .failure(.parseFailed) }
+                return .success(translator)
+            }
         }
 
         await store.send(.settingRowTapped(.general)) {
@@ -176,6 +182,10 @@ struct SettingReducerNavigationTests {
         let id = try #require(store.state.path.ids.last)
         let url = URL(filePath: "/tmp/tags.json")
         await store.send(.path(.element(id: id, action: .general(.onTranslationsFilePicked(url)))))
+
+        // Complete the simulated file I/O after the initiating action has been asserted, keeping
+        // the asynchronous completion and its shared-state writes in the receive assertion.
+        continuation.yield(imported)
 
         // The parent intercept runs `fileClient.importTagTranslator`, stores the (in-memory) table
         // and records the custom-import flag in the persisted `tagTranslatorInfo`.

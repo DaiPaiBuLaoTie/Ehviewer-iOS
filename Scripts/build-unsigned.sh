@@ -5,7 +5,7 @@ BUILD_ROOT="${BUILD_ROOT:-$ROOT/build}"
 mkdir -p "$BUILD_ROOT/logs" "$BUILD_ROOT/artifacts"
 cd "$ROOT"
 python3 Scripts/verify-source.py
-xcodebuild archive \
+xcodebuild -quiet archive \
   -project EhPanda.xcodeproj -scheme EhPanda -configuration Release \
   -destination 'generic/platform=iOS' \
   -archivePath "$BUILD_ROOT/EhViewer-SXJ.xcarchive" \

@@ -83,7 +83,15 @@ actor SXJFolderImporter {
                 }
                 if let coordinationError { throw coordinationError }
                 if let failure { throw failure }
-                guard CGImageSourceCreateWithURL(target as CFURL, nil) != nil else { throw ImportError.invalidImage }
+                let decodingOptions: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 64,
+                    kCGImageSourceShouldCacheImmediately: true
+                ]
+                guard let imageSource = CGImageSourceCreateWithURL(target as CFURL, nil),
+                      CGImageSourceGetCount(imageSource) > 0,
+                      CGImageSourceCreateThumbnailAtIndex(imageSource, 0, decodingOptions as CFDictionary) != nil
+                else { throw ImportError.invalidImage }
                 hashes[index] = try storage.fileHash(at: target)
                 if index == 1 {
                     let cover = storage.makeCoverRelativePath(
