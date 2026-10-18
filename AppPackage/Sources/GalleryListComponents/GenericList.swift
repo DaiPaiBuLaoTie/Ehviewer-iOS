@@ -1,0 +1,256 @@
+import SwiftUI
+import Sharing
+import SFSafeSymbols
+import AppModels
+import AppComponents
+import WaterfallGrid
+import AppTools
+
+public struct GenericList: View {
+    @SharedReader(.setting) private var setting: Setting
+    @SharedReader(.sxjBlockRules) private var blockRules: [SXJBlockRule]
+
+    private let galleries: [Gallery]
+    private let downloadBadges: [String: DownloadBadge]
+    private let pageNumber: PageNumber?
+    private let loadingState: LoadingState
+    private let footerLoadingState: LoadingState
+    private let notice: LocalizedStringResource?
+    private let fetchAction: (() -> Void)?
+    private let fetchMoreAction: (() -> Void)?
+    private let navigateAction: ((Gallery) -> Void)?
+    private let translateAction: ((String) -> (String, TagTranslation?))?
+
+    public init(
+        galleries: [Gallery], pageNumber: PageNumber?,
+        loadingState: LoadingState, footerLoadingState: LoadingState,
+        notice: LocalizedStringResource? = nil,
+        fetchAction: (() -> Void)? = nil,
+        fetchMoreAction: (() -> Void)? = nil,
+        navigateAction: ((Gallery) -> Void)? = nil,
+        translateAction: ((String) -> (String, TagTranslation?))? = nil,
+        downloadBadges: [String: DownloadBadge] = [:]
+    ) {
+        self.galleries = galleries
+        self.downloadBadges = downloadBadges
+        self.pageNumber = pageNumber
+        self.loadingState = loadingState
+        self.footerLoadingState = footerLoadingState
+        self.notice = notice
+        self.fetchAction = fetchAction
+        self.fetchMoreAction = fetchMoreAction
+        self.navigateAction = navigateAction
+        self.translateAction = translateAction
+    }
+
+    private var visibleGalleries: [Gallery] {
+        galleries.filter { gallery in !blockRules.contains { $0.matches(gallery) } }
+    }
+
+    public var body: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                switch setting.listDisplayMode {
+                case .detail:
+                    DetailList(
+                        galleries: visibleGalleries, pageNumber: pageNumber,
+                        footerLoadingState: footerLoadingState, notice: notice,
+                        fetchMoreAction: fetchMoreAction,
+                        navigateAction: navigateAction, translateAction: translateAction,
+                        downloadBadges: downloadBadges
+                    )
+                case .thumbnail:
+                    WaterfallList(
+                        galleries: visibleGalleries, pageNumber: pageNumber,
+                        footerLoadingState: footerLoadingState, notice: notice,
+                        fetchMoreAction: fetchMoreAction,
+                        navigateAction: navigateAction, translateAction: translateAction,
+                        downloadBadges: downloadBadges
+                    )
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if visibleGalleries.isEmpty, !galleries.isEmpty {
+                    VStack {
+                        Text("此页画廊已被本地规则屏蔽")
+                        if pageNumber?.hasNextPage() == true {
+                            Button("加载下一页") { fetchMoreAction?() }.buttonStyle(.bordered)
+                        }
+                    }
+                    .padding()
+                }
+            }
+            .opacity(loadingState == .idle ? 1 : 0).zIndex(2)
+
+            LoadingView()
+                .opacity(loadingState == .loading ? 1 : 0).zIndex(0)
+
+            ErrorView(error: loadingState.failed ?? .unknown, action: fetchAction)
+                .opacity([.idle, .loading].contains(loadingState) ? 0 : 1)
+                .zIndex(1)
+        }
+        .animation(.default, value: loadingState)
+        .animation(.default, value: galleries)
+        .refreshable { fetchAction?() }
+    }
+}
+
+// MARK: DetailList
+private struct DetailList: View {
+    private let galleries: [Gallery]
+    private let downloadBadges: [String: DownloadBadge]
+    private let pageNumber: PageNumber?
+    private let footerLoadingState: LoadingState
+    private let notice: LocalizedStringResource?
+    private let fetchMoreAction: (() -> Void)?
+    private let navigateAction: ((Gallery) -> Void)?
+    private let translateAction: ((String) -> (String, TagTranslation?))?
+
+    init(
+        galleries: [Gallery], pageNumber: PageNumber?,
+        footerLoadingState: LoadingState, notice: LocalizedStringResource? = nil,
+        fetchMoreAction: (() -> Void)?,
+        navigateAction: ((Gallery) -> Void)? = nil,
+        translateAction: ((String) -> (String, TagTranslation?))? = nil,
+        downloadBadges: [String: DownloadBadge] = [:]
+    ) {
+        self.galleries = galleries
+        self.downloadBadges = downloadBadges
+        self.pageNumber = pageNumber
+        self.footerLoadingState = footerLoadingState
+        self.notice = notice
+        self.fetchMoreAction = fetchMoreAction
+        self.navigateAction = navigateAction
+        self.translateAction = translateAction
+    }
+
+    private func shouldShowFooter(gallery: Gallery) -> Bool {
+        guard let pageNumber = pageNumber else { return false }
+
+        let isLastGallery = gallery == galleries.last
+        let isPageNumberValid = pageNumber.hasNextPage()
+        let isLoadingStateIdle = footerLoadingState == .idle
+
+        return isLastGallery && isPageNumberValid && !isLoadingStateIdle
+    }
+
+    var body: some View {
+        List {
+            notice.map(ListNoticeView.init)
+
+            ForEach(galleries) { gallery in
+                Button {
+                    navigateAction?(gallery)
+                } label: {
+                    GalleryDetailCell(
+                        gallery: gallery,
+                        translateAction: translateAction,
+                        downloadBadge: downloadBadges[gallery.gid]
+                    )
+                }
+                .contextMenu { SXJGalleryActions(gallery: gallery) }
+                .foregroundColor(.primary)
+                .onAppear {
+                    if gallery == galleries.last {
+                        fetchMoreAction?()
+                    }
+                }
+                if shouldShowFooter(gallery: gallery) {
+                    FetchMoreFooter(loadingState: footerLoadingState, retryAction: fetchMoreAction)
+                }
+            }
+        }
+    }
+}
+
+// MARK: WaterfallList
+private struct WaterfallList: View {
+    private let galleries: [Gallery]
+    private let downloadBadges: [String: DownloadBadge]
+    private let pageNumber: PageNumber?
+    private let footerLoadingState: LoadingState
+    private let notice: LocalizedStringResource?
+    private let fetchMoreAction: (() -> Void)?
+    private let navigateAction: ((Gallery) -> Void)?
+    private let translateAction: ((String) -> (String, TagTranslation?))?
+
+    private var columnsInPortrait: Int {
+        DeviceUtil.isPadWidth ? 4 : 2
+    }
+    private var columnsInLandscape: Int {
+        DeviceUtil.isPadWidth ? 5 : 2
+    }
+
+    private var shouldShowFooter: Bool {
+        guard let pageNumber = pageNumber else { return false }
+
+        let isPageNumberValid = pageNumber.hasNextPage()
+        let isLoadingStateIdle = footerLoadingState == .idle
+
+        return !isLoadingStateIdle && isPageNumberValid
+    }
+
+    init(
+        galleries: [Gallery], pageNumber: PageNumber?,
+        footerLoadingState: LoadingState, notice: LocalizedStringResource? = nil,
+        fetchMoreAction: (() -> Void)?,
+        navigateAction: ((Gallery) -> Void)? = nil,
+        translateAction: ((String) -> (String, TagTranslation?))? = nil,
+        downloadBadges: [String: DownloadBadge] = [:]
+    ) {
+        self.galleries = galleries
+        self.downloadBadges = downloadBadges
+        self.pageNumber = pageNumber
+        self.footerLoadingState = footerLoadingState
+        self.notice = notice
+        self.fetchMoreAction = fetchMoreAction
+        self.navigateAction = navigateAction
+        self.translateAction = translateAction
+    }
+
+    var body: some View {
+        List {
+            if let notice {
+                Section {
+                    ListNoticeView(notice: notice)
+                }
+            }
+            WaterfallGrid(galleries) { gallery in
+                Button {
+                    navigateAction?(gallery)
+                } label: {
+                    GalleryThumbnailCell(
+                        gallery: gallery,
+                        translateAction: translateAction,
+                        downloadBadge: downloadBadges[gallery.gid]
+                    )
+                    .tint(.primary).multilineTextAlignment(.leading)
+                }
+                .contextMenu { SXJGalleryActions(gallery: gallery) }
+                .buttonStyle(.borderless)
+            }
+            .gridStyle(
+                columnsInPortrait: columnsInPortrait, columnsInLandscape: columnsInLandscape,
+                spacing: 15, animation: nil
+            )
+            if !shouldShowFooter {
+                Button {
+                    fetchMoreAction?()
+                } label: {
+                    HStack {
+                        Spacer()
+                        Image(systemSymbol: .chevronDown)
+                        Spacer()
+                    }
+                }
+                .foregroundStyle(.tint)
+            } else {
+                FetchMoreFooter(
+                    loadingState: footerLoadingState,
+                    retryAction: fetchMoreAction
+                )
+            }
+        }
+        .listStyle(.plain)
+    }
+}

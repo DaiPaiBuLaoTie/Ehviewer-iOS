@@ -1,0 +1,75 @@
+name: Build unsigned iOS IPA
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and package arm64 IPA
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      BUILD_ROOT: ${{ github.workspace }}/build
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check source and toolchain
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+          python3 Scripts/verify-source.py
+          python3 -m unittest discover -s Scripts/tests -p 'test_*.py'
+          bash -n Scripts/build-unsigned.sh Scripts/package-unsigned.sh Scripts/test-ios.sh
+      - name: Resolve locked Swift packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project EhPanda.xcodeproj -scheme EhPanda \
+            -clonedSourcePackagesDirPath "$BUILD_ROOT/SourcePackages" \
+            -onlyUsePackageVersionsFromResolvedFile
+      - name: Run iOS simulator tests
+        run: bash Scripts/test-ios.sh
+      - name: Archive and package unsigned IPA
+        run: bash Scripts/build-unsigned.sh
+      - name: Upload unsigned IPA and checksums
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: EhViewer-SXJ-iOS-unsigned-${{ github.run_number }}
+          path: |
+            build/artifacts/*.ipa
+            build/artifacts/*.sha256
+            build/artifacts/build-info.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ios-diagnostics-${{ github.run_number }}
+          path: |
+            build/logs/
+            build/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Build summary
+        if: success()
+        run: |
+          {
+            echo '### Unsigned IPA is ready for your own signing'
+            echo 'Download the EhViewer-SXJ-iOS-unsigned artifact, then extract the .ipa.'
+            echo 'Minimum iOS: 26.0. Built for physical arm64 devices.'
+            echo 'Signing certificate and provisioning profile are not embedded.'
+            echo 'SHA-256:'
+            cat build/artifacts/*.sha256
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,66 @@
+{
+  "configurations" : [
+    {
+      "id" : "C0DEC0DE-FEED-4A11-BEEF-FEA7011E5751",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:AppPackage",
+        "identifier" : "AppModelsTests",
+        "name" : "AppModelsTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:AppPackage",
+        "identifier" : "DetailFeatureTests",
+        "name" : "DetailFeatureTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:AppPackage",
+        "identifier" : "DownloadsFeatureTests",
+        "name" : "DownloadsFeatureTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:AppPackage",
+        "identifier" : "FileClientTests",
+        "name" : "FileClientTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:AppPackage",
+        "identifier" : "NetworkingFeatureTests",
+        "name" : "NetworkingFeatureTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:AppPackage",
+        "identifier" : "ParserFeatureTests",
+        "name" : "ParserFeatureTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:AppPackage",
+        "identifier" : "SettingFeatureTests",
+        "name" : "SettingFeatureTests"
+      }
+    }
+  ],
+  "version" : 1
+}

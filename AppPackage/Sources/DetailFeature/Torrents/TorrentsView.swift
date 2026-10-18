@@ -1,0 +1,121 @@
+import SwiftUI
+import AppModels
+import Resources
+import ComposableArchitecture
+import SystemNotificationExt
+import AppComponents
+
+struct TorrentsView: View {
+    @Bindable private var store: StoreOf<TorrentsReducer>
+    private let gid: String
+    private let token: String
+    private let blurRadius: Double
+
+    init(store: StoreOf<TorrentsReducer>, gid: String, token: String, blurRadius: Double) {
+        self.store = store
+        self.gid = gid
+        self.token = token
+        self.blurRadius = blurRadius
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                List(store.torrents) { torrent in
+                    TorrentRow(torrent: torrent) { magnetURL in
+                        store.send(.copyText(magnetURL))
+                    }
+                    .swipeActions {
+                        Button {
+                            store.send(.fetchTorrent(torrent.hash, torrent.torrentURL))
+                        } label: {
+                            Image(systemSymbol: .arrowDownDocumentFill)
+                        }
+                    }
+                }
+
+                LoadingView()
+                    .opacity(store.loadingState == .loading && store.torrents.isEmpty ? 1 : 0)
+
+                let error = store.loadingState.failed
+                ErrorView(error: error ?? .unknown) {
+                    store.send(.fetchGalleryTorrents(gid, token))
+                }
+                .opacity(error != nil && store.torrents.isEmpty ? 1 : 0)
+            }
+            .sheet(item: $store.destination.share, id: \.absoluteString) { url in
+                ActivityView(activityItems: [url.wrappedValue])
+                    .autoBlur(radius: blurRadius)
+            }
+            .toast($store.scope(state: \.toast, action: \.toast))
+            .animation(.default, value: store.torrents)
+            .onAppear {
+                store.send(.fetchGalleryTorrents(gid, token))
+            }
+            .navigationTitle(.torrents)
+        }
+    }
+}
+
+private extension TorrentsView {
+    struct TorrentRow: View {
+        private let torrent: GalleryTorrent
+        private let action: (String) -> Void
+
+        init(torrent: GalleryTorrent, action: @escaping (String) -> Void) {
+            self.torrent = torrent
+            self.action = action
+        }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    HStack(spacing: 3) {
+                        Image(systemSymbol: .arrowUpCircle)
+                        Text(torrent.seedCount, format: .number)
+                    }
+                    HStack(spacing: 3) {
+                        Image(systemSymbol: .arrowDownCircle)
+                        Text(torrent.peerCount, format: .number)
+                    }
+                    HStack(spacing: 3) {
+                        Image(systemSymbol: .checkmarkCircle)
+                        Text(torrent.downloadCount, format: .number)
+                    }
+                    Spacer()
+                    HStack(spacing: 3) {
+                        Image(systemSymbol: .documentCircle)
+                        Text(torrent.fileSize)
+                    }
+                }
+                .minimumScaleFactor(0.1).lineLimit(1)
+                Button {
+                    action(torrent.magnetURL)
+                } label: {
+                    Text(torrent.fileName).font(.headline)
+                }
+                HStack {
+                    Spacer()
+                    Text(torrent.uploader)
+                    Text(torrent.formattedDateString)
+                }
+                .lineLimit(1).font(.callout)
+                .foregroundStyle(.secondary)
+                .minimumScaleFactor(0.5)
+                .padding(.top, 10)
+            }
+            .padding()
+        }
+    }
+}
+
+struct TorrentsView_Previews: PreviewProvider {
+    static var previews: some View {
+        TorrentsView(
+            store: .init(initialState: .init(), reducer: TorrentsReducer.init),
+            gid: .init(),
+            token: .init(),
+            blurRadius: 0
+        )
+    }
+}

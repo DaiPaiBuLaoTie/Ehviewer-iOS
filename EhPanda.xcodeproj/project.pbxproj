@@ -1,0 +1,631 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 100;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A0F00000000000000000F001 /* AppFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A0F00000000000000000F002 /* AppFeature */; };
+		AB5BE68026B95FDD007D4A55 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AB5BE67626B95FDD007D4A55 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		EA0C92592C3EB49500D211F6 /* README.cht.md in Resources */ = {isa = PBXBuildFile; fileRef = EA0C92532C3EB49500D211F6 /* README.cht.md */; };
+		EA0C925A2C3EB49500D211F6 /* README.ko.md in Resources */ = {isa = PBXBuildFile; fileRef = EA0C92542C3EB49500D211F6 /* README.ko.md */; };
+		EA0C925B2C3EB49500D211F6 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = EA0C92552C3EB49500D211F6 /* README.md */; };
+		EA0C925C2C3EB49500D211F6 /* README.de.md in Resources */ = {isa = PBXBuildFile; fileRef = EA0C92562C3EB49500D211F6 /* README.de.md */; };
+		EA0C925D2C3EB49500D211F6 /* README.chs.md in Resources */ = {isa = PBXBuildFile; fileRef = EA0C92572C3EB49500D211F6 /* README.chs.md */; };
+		EA0C925E2C3EB49500D211F6 /* README.jpn.md in Resources */ = {isa = PBXBuildFile; fileRef = EA0C92582C3EB49500D211F6 /* README.jpn.md */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AB5BE67E26B95FDD007D4A55 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = ABC3C74C2593696C00E0C11B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AB5BE67526B95FDD007D4A55;
+			remoteInfo = ShareExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AB5BE68126B95FDD007D4A55 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			dstPath = "";
+			dstSubfolder = PlugIns;
+			files = (
+				AB5BE68026B95FDD007D4A55 /* ShareExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		A0F00000000000000000F004 /* AppPackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = AppPackage; sourceTree = "<group>"; };
+		AB5BE67626B95FDD007D4A55 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		ABC3C7542593696C00E0C11B /* EhPanda.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EhPanda.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EA0C92482C3EB45E00D211F6 /* AltStore.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = AltStore.json; sourceTree = "<group>"; };
+		EA0C924A2C3EB45E00D211F6 /* .gitattributes */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = .gitattributes; sourceTree = "<group>"; };
+		EA0C924B2C3EB45E00D211F6 /* .swiftlint.yml */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.yaml; path = .swiftlint.yml; sourceTree = "<group>"; };
+		EA0C924C2C3EB45E00D211F6 /* .gitignore */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
+		EA0C92532C3EB49500D211F6 /* README.cht.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; name = README.cht.md; path = READMEs/README.cht.md; sourceTree = "<group>"; };
+		EA0C92542C3EB49500D211F6 /* README.ko.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; name = README.ko.md; path = READMEs/README.ko.md; sourceTree = "<group>"; };
+		EA0C92552C3EB49500D211F6 /* README.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		EA0C92562C3EB49500D211F6 /* README.de.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; name = README.de.md; path = READMEs/README.de.md; sourceTree = "<group>"; };
+		EA0C92572C3EB49500D211F6 /* README.chs.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; name = README.chs.md; path = READMEs/README.chs.md; sourceTree = "<group>"; };
+		EA0C92582C3EB49500D211F6 /* README.jpn.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; name = README.jpn.md; path = READMEs/README.jpn.md; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A6844C242F780C8700BBF6E5 /* Exceptions for "App" folder in "EhPanda" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = ABC3C7532593696C00E0C11B /* EhPanda */;
+		};
+		A6844C292F780C8D00BBF6E5 /* Exceptions for "ShareExtension" folder in "ShareExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ShareViewController.swift,
+			);
+			target = AB5BE67526B95FDD007D4A55 /* ShareExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		A62261E62FC559F00055B5C0 /* .github */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = .github;
+			sourceTree = "<group>";
+		};
+		A6844B3D2F780C8600BBF6E5 /* App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A6844C242F780C8700BBF6E5 /* Exceptions for "App" folder in "EhPanda" target */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		A6844C272F780C8B00BBF6E5 /* ShareExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A6844C292F780C8D00BBF6E5 /* Exceptions for "ShareExtension" folder in "ShareExtension" target */,
+			);
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AB5BE67326B95FDD007D4A55 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
+		ABC3C7512593696C00E0C11B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+				A0F00000000000000000F001 /* AppFeature in Frameworks */,
+			);
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AB82819926B1C39B00A80CFA /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		ABC3C74B2593696C00E0C11B = {
+			isa = PBXGroup;
+			children = (
+				A0F00000000000000000F004 /* AppPackage */,
+				A6844B3D2F780C8600BBF6E5 /* App */,
+				A6844C272F780C8B00BBF6E5 /* ShareExtension */,
+				EA0C92472C3EB44300D211F6 /* Config */,
+				EA0C92422C3EB40100D211F6 /* GitHub */,
+				EA0C92522C3EB47F00D211F6 /* READMEs */,
+				ABC3C7552593696C00E0C11B /* Products */,
+				AB82819926B1C39B00A80CFA /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		ABC3C7552593696C00E0C11B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				ABC3C7542593696C00E0C11B /* EhPanda.app */,
+				AB5BE67626B95FDD007D4A55 /* ShareExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		EA0C92422C3EB40100D211F6 /* GitHub */ = {
+			isa = PBXGroup;
+			children = (
+				A62261E62FC559F00055B5C0 /* .github */,
+			);
+			name = GitHub;
+			sourceTree = "<group>";
+		};
+		EA0C92472C3EB44300D211F6 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				EA0C924A2C3EB45E00D211F6 /* .gitattributes */,
+				EA0C924C2C3EB45E00D211F6 /* .gitignore */,
+				EA0C924B2C3EB45E00D211F6 /* .swiftlint.yml */,
+				EA0C92482C3EB45E00D211F6 /* AltStore.json */,
+			);
+			name = Config;
+			sourceTree = "<group>";
+		};
+		EA0C92522C3EB47F00D211F6 /* READMEs */ = {
+			isa = PBXGroup;
+			children = (
+				EA0C92572C3EB49500D211F6 /* README.chs.md */,
+				EA0C92532C3EB49500D211F6 /* README.cht.md */,
+				EA0C92562C3EB49500D211F6 /* README.de.md */,
+				EA0C92582C3EB49500D211F6 /* README.jpn.md */,
+				EA0C92542C3EB49500D211F6 /* README.ko.md */,
+				EA0C92552C3EB49500D211F6 /* README.md */,
+			);
+			name = READMEs;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AB5BE67526B95FDD007D4A55 /* ShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB5BE68426B95FDD007D4A55 /* Build configuration list for PBXNativeTarget "ShareExtension" */;
+			buildPhases = (
+				AB5BE67226B95FDD007D4A55 /* Sources */,
+				AB5BE67326B95FDD007D4A55 /* Frameworks */,
+				AB5BE67426B95FDD007D4A55 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A66A766F2F77C89100FC07B8 /* PBXTargetDependency */,
+			);
+			name = ShareExtension;
+			productName = ShareExtension;
+			productReference = AB5BE67626B95FDD007D4A55 /* ShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		ABC3C7532593696C00E0C11B /* EhPanda */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ABC3C7632593696E00E0C11B /* Build configuration list for PBXNativeTarget "EhPanda" */;
+			buildPhases = (
+				ABC3C7502593696C00E0C11B /* Sources */,
+				ABC3C7512593696C00E0C11B /* Frameworks */,
+				ABC3C7522593696C00E0C11B /* Resources */,
+				AB5BE68126B95FDD007D4A55 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A66A766D2F77C88A00FC07B8 /* PBXTargetDependency */,
+				AB5BE67F26B95FDD007D4A55 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A6844B3D2F780C8600BBF6E5 /* App */,
+			);
+			name = EhPanda;
+			packageProductDependencies = (
+				A0F00000000000000000F002 /* AppFeature */,
+			);
+			productName = EhPanda;
+			productReference = ABC3C7542593696C00E0C11B /* EhPanda.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		ABC3C74C2593696C00E0C11B /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastSwiftUpdateCheck = 1300;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					AB5BE67526B95FDD007D4A55 = {
+						CreatedOnToolsVersion = 13.0;
+					};
+					ABC3C7532593696C00E0C11B = {
+						CreatedOnToolsVersion = 12.2;
+					};
+				};
+			};
+			buildConfigurationList = ABC3C74F2593696C00E0C11B /* Build configuration list for PBXProject "EhPanda" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				ja,
+				"zh-Hans",
+				ko,
+				de,
+				"zh-Hant",
+			);
+			mainGroup = ABC3C74B2593696C00E0C11B;
+			packageReferences = (
+				A66A766B2F77C87400FC07B8 /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */,
+			);
+			preferredProjectObjectVersion = 100;
+			productRefGroup = ABC3C7552593696C00E0C11B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				ABC3C7532593696C00E0C11B /* EhPanda */,
+				AB5BE67526B95FDD007D4A55 /* ShareExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AB5BE67426B95FDD007D4A55 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+		ABC3C7522593696C00E0C11B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+				EA0C92592C3EB49500D211F6 /* README.cht.md in Resources */,
+				EA0C925D2C3EB49500D211F6 /* README.chs.md in Resources */,
+				EA0C925C2C3EB49500D211F6 /* README.de.md in Resources */,
+				EA0C925B2C3EB49500D211F6 /* README.md in Resources */,
+				EA0C925A2C3EB49500D211F6 /* README.ko.md in Resources */,
+				EA0C925E2C3EB49500D211F6 /* README.jpn.md in Resources */,
+			);
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AB5BE67226B95FDD007D4A55 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
+		ABC3C7502593696C00E0C11B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A66A766D2F77C88A00FC07B8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = A66A766C2F77C88A00FC07B8 /* SwiftLintBuildToolPlugin */;
+		};
+		A66A766F2F77C89100FC07B8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = A66A766E2F77C89100FC07B8 /* SwiftLintBuildToolPlugin */;
+		};
+		AB5BE67F26B95FDD007D4A55 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AB5BE67526B95FDD007D4A55 /* ShareExtension */;
+			targetProxy = AB5BE67E26B95FDD007D4A55 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		AB5BE68226B95FDD007D4A55 /* Debug configuration for PBXNativeTarget "ShareExtension" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = ShareExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.ehviewer.sxj.ios.shareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AB5BE68326B95FDD007D4A55 /* Release configuration for PBXNativeTarget "ShareExtension" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = ShareExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.ehviewer.sxj.ios.shareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		ABC3C7612593696E00E0C11B /* Debug configuration for PBXProject "EhPanda" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_LDFLAGS = "";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		ABC3C7622593696E00E0C11B /* Release configuration for PBXProject "EhPanda" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				OTHER_LDFLAGS = "";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		ABC3C7642593696E00E0C11B /* Debug configuration for PBXNativeTarget "EhPanda" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = App/EhPanda.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = org.ehviewer.sxj.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		ABC3C7652593696E00E0C11B /* Release configuration for PBXNativeTarget "EhPanda" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = App/EhPanda.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = org.ehviewer.sxj.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AB5BE68426B95FDD007D4A55 /* Build configuration list for PBXNativeTarget "ShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB5BE68226B95FDD007D4A55 /* Debug configuration for PBXNativeTarget "ShareExtension" */,
+				AB5BE68326B95FDD007D4A55 /* Release configuration for PBXNativeTarget "ShareExtension" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		ABC3C74F2593696C00E0C11B /* Build configuration list for PBXProject "EhPanda" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ABC3C7612593696E00E0C11B /* Debug configuration for PBXProject "EhPanda" */,
+				ABC3C7622593696E00E0C11B /* Release configuration for PBXProject "EhPanda" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		ABC3C7632593696E00E0C11B /* Build configuration list for PBXNativeTarget "EhPanda" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ABC3C7642593696E00E0C11B /* Debug configuration for PBXNativeTarget "EhPanda" */,
+				ABC3C7652593696E00E0C11B /* Release configuration for PBXNativeTarget "EhPanda" */,
+			);
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A0F00000000000000000F003 /* XCLocalSwiftPackageReference "AppPackage" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = AppPackage;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A66A766B2F77C87400FC07B8 /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SimplyDanny/SwiftLintPlugins";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A0F00000000000000000F002 /* AppFeature */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A0F00000000000000000F003 /* XCLocalSwiftPackageReference "AppPackage" */;
+			productName = AppFeature;
+		};
+		A66A766C2F77C88A00FC07B8 /* SwiftLintBuildToolPlugin */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A66A766B2F77C87400FC07B8 /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */;
+			productName = "plugin:SwiftLintBuildToolPlugin";
+		};
+		A66A766E2F77C89100FC07B8 /* SwiftLintBuildToolPlugin */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A66A766B2F77C87400FC07B8 /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */;
+			productName = "plugin:SwiftLintBuildToolPlugin";
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = ABC3C74C2593696C00E0C11B /* Project object */;
+}

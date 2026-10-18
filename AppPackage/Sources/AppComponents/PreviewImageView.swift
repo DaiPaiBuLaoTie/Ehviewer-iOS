@@ -1,0 +1,154 @@
+import SwiftUI
+import AppModels
+import ImageIO
+import Kingfisher
+import AppTools
+
+public struct PreviewImageView: View {
+    private let originalURL: URL?
+    private let maxPixelSize: CGFloat
+    public static let defaultMaxPixelSize = Defaults.ImageSize.previewMaxW * 3
+
+    public init(
+        originalURL: URL?,
+        maxPixelSize: CGFloat = PreviewImageView.defaultMaxPixelSize
+    ) {
+        self.originalURL = originalURL
+        self.maxPixelSize = maxPixelSize
+    }
+
+    public var body: some View {
+        if let originalURL, originalURL.isFileURL {
+            LocalPreviewImageView(fileURL: originalURL, maxPixelSize: maxPixelSize) {
+                Placeholder(style: .activity(ratio: Defaults.ImageSize.previewAspect))
+            }
+        } else {
+            let (url, modifier) = PreviewResolver.getPreviewConfigs(originalURL: originalURL)
+            KFImage.url(
+                url,
+                cacheKey: url?.stableImageCacheKey
+                    ?? originalURL?.stableImageCacheKey
+                    ?? originalURL?.absoluteString
+            )
+            .placeholder {
+                Placeholder(style: .activity(ratio: Defaults.ImageSize.previewAspect))
+            }
+            .imageModifier(modifier)
+            .fade(duration: 0.25)
+            .resizable()
+            .scaledToFit()
+        }
+    }
+}
+
+private struct LocalPreviewImageView<Placeholder: View>: View {
+    private let fileURL: URL
+    private let maxPixelSize: CGFloat
+    private let placeholder: Placeholder
+
+    @State private var thumbnail: UIImage?
+
+    init(
+        fileURL: URL,
+        maxPixelSize: CGFloat,
+        @ViewBuilder placeholder: () -> Placeholder
+    ) {
+        self.fileURL = fileURL
+        self.maxPixelSize = maxPixelSize
+        self.placeholder = placeholder()
+    }
+
+    private var cacheKey: String {
+        let resourceValues = try? fileURL.resourceValues(forKeys: [
+            .contentModificationDateKey,
+            .fileSizeKey
+        ])
+        let modificationStamp = resourceValues?.contentModificationDate?
+            .timeIntervalSinceReferenceDate ?? .zero
+        let fileSize = resourceValues?.fileSize ?? 0
+        return "\(fileURL.path)#\(Int(maxPixelSize))#\(fileSize)#\(modificationStamp)"
+    }
+
+    var body: some View {
+        Group {
+            if let thumbnail {
+                Image(uiImage: thumbnail)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(.rect(cornerRadius: 5))
+            } else {
+                placeholder
+            }
+        }
+        .task(id: cacheKey) {
+            await loadThumbnail()
+        }
+    }
+
+    @MainActor
+    private func loadThumbnail() async {
+        if let cachedThumbnail = LocalPreviewThumbnailCache.shared.image(forKey: cacheKey) {
+            thumbnail = cachedThumbnail
+            return
+        }
+
+        // Decode off the main actor via `@concurrent`; awaiting it directly (instead
+        // of a detached task) lets the SwiftUI `.task` cancellation propagate, so a
+        // cell that scrolls off screen sheds its in-flight decode rather than piling
+        // up un-sheddable work during fast scrolling.
+        let generatedThumbnail = await LocalPreviewThumbnailGenerator.make(
+            fileURL: fileURL,
+            maxPixelSize: maxPixelSize
+        )
+
+        guard !Task.isCancelled else { return }
+        if let generatedThumbnail {
+            LocalPreviewThumbnailCache.shared.store(generatedThumbnail, forKey: cacheKey)
+        }
+        thumbnail = generatedThumbnail
+    }
+
+}
+
+private enum LocalPreviewThumbnailGenerator {
+    @concurrent
+    static func make(fileURL: URL, maxPixelSize: CGFloat) async -> UIImage? {
+        guard !Task.isCancelled,
+              let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, nil) else {
+            return nil
+        }
+
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: false,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(Int(maxPixelSize.rounded(.up)), 1)
+        ]
+
+        guard !Task.isCancelled,
+              let imageRef = CGImageSourceCreateThumbnailAtIndex(
+                imageSource,
+                .zero,
+                options as CFDictionary
+              ) else {
+            return nil
+        }
+
+        return UIImage(cgImage: imageRef)
+    }
+}
+
+@MainActor
+private final class LocalPreviewThumbnailCache {
+    static let shared = LocalPreviewThumbnailCache()
+
+    private let cache = NSCache<NSString, UIImage>()
+
+    func image(forKey key: String) -> UIImage? {
+        cache.object(forKey: key as NSString)
+    }
+
+    func store(_ image: UIImage, forKey key: String) {
+        cache.setObject(image, forKey: key as NSString)
+    }
+}

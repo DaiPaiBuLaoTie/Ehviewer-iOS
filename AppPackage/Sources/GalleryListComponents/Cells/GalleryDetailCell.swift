@@ -1,0 +1,154 @@
+import SwiftUI
+import Sharing
+import SFSafeSymbols
+import AppModels
+import TagTranslationFeature
+import AppComponents
+import Kingfisher
+import AppTools
+
+public struct GalleryDetailCell: View {
+    public enum CoverSource {
+        case dynamic
+        case `static`(URL?)
+    }
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private let gallery: Gallery
+    private let coverSource: CoverSource
+    private let translateAction: ((String) -> (String, TagTranslation?))?
+    private let downloadBadge: DownloadBadge?
+
+    public init(
+        gallery: Gallery,
+        coverSource: CoverSource = .dynamic,
+        translateAction: ((String) -> (String, TagTranslation?))? = nil,
+        downloadBadge: DownloadBadge? = nil
+    ) {
+        self.gallery = gallery
+        self.coverSource = coverSource
+        self.translateAction = translateAction
+        self.downloadBadge = downloadBadge
+    }
+
+    private var resolvedCoverURL: URL? {
+        switch coverSource {
+        case .dynamic:
+            gallery.coverURL
+        case .static(let url):
+            url
+        }
+    }
+
+    public var body: some View {
+        GalleryDetailCellContent(
+            gallery: gallery,
+            resolvedCoverURL: resolvedCoverURL,
+            colorScheme: colorScheme,
+            translateAction: translateAction,
+            downloadBadge: downloadBadge
+        )
+    }
+}
+
+private struct GalleryDetailCellContent: View {
+    @SharedReader(.setting) private var setting: Setting
+
+    private let gallery: Gallery
+    private let resolvedCoverURL: URL?
+    private let colorScheme: ColorScheme
+    private let translateAction: ((String) -> (String, TagTranslation?))?
+    private let downloadBadge: DownloadBadge?
+
+    init(
+        gallery: Gallery,
+        resolvedCoverURL: URL?,
+        colorScheme: ColorScheme,
+        translateAction: ((String) -> (String, TagTranslation?))?,
+        downloadBadge: DownloadBadge?
+    ) {
+        self.gallery = gallery
+        self.resolvedCoverURL = resolvedCoverURL
+        self.colorScheme = colorScheme
+        self.translateAction = translateAction
+        self.downloadBadge = downloadBadge
+    }
+
+    private var tagColor: Color {
+        colorScheme == .light ? Color(.systemGray5) : Color(.systemGray4)
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            KFImage(resolvedCoverURL)
+                .placeholder { Placeholder(style: .activity(ratio: Defaults.ImageSize.rowAspect)) }
+                .defaultModifier().scaledToFit().frame(width: Defaults.ImageSize.rowW, height: Defaults.ImageSize.rowH)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(gallery.title)
+                    .lineLimit(downloadBadge == nil ? 3 : 2)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if gallery.uploader != nil || gallery.language != nil {
+                    HStack {
+                        gallery.uploader.map(Text.init)
+
+                        Spacer(minLength: 8)
+
+                        (gallery.language?.value).map(Text.init)
+                    }
+                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                }
+
+                let tagContents = gallery.tagContents(maximum: setting.listTagsNumberMaximum)
+                if setting.showsTagsInList, !tagContents.isEmpty {
+                    TagCloudView(data: tagContents) { content in
+                        let translation = translateAction?(content.rawNamespace + content.text).1
+                        TagCloudCell(
+                            text: translation?.displayValue ?? content.text,
+                            imageURL: translation?.valueImageURL,
+                            showsImages: setting.showsImagesInTags,
+                            font: .caption2, padding: .init(top: 2, leading: 4, bottom: 2, trailing: 4),
+                            textColor: content.backgroundColor != nil ? content.textColor ?? .secondary : .secondary,
+                            backgroundColor: content.backgroundColor ?? tagColor
+                        )
+                    }
+                }
+                HStack {
+                    RatingView(rating: gallery.rating).font(.caption).foregroundStyle(.yellow)
+
+                    Spacer(minLength: 8)
+
+                    if let downloadBadge {
+                        DownloadBadgeLabel(badge: downloadBadge)
+                    } else {
+                        HStack(spacing: 2) {
+                            Image(systemSymbol: .photoOnRectangleAngled)
+                            Text(String(gallery.pageCount))
+                        }
+                        .lineLimit(1).font(.footnote).foregroundStyle(.secondary).minimumScaleFactor(0.75)
+                    }
+                }
+                HStack(alignment: .bottom) {
+                    CategoryLabel(text: gallery.category.value, color: gallery.color(host: AppUtil.galleryHost))
+                    Spacer()
+                    Text(gallery.formattedDateString).lineLimit(1).font(.footnote)
+                        .foregroundStyle(.secondary).minimumScaleFactor(0.75)
+                }
+                .padding(.top, 1)
+            }
+            .drawingGroup()
+        }
+        .padding(.vertical, 5).padding(.leading, -10).padding(.trailing, -5)
+    }
+}
+
+struct GalleryDetailCell_Previews: PreviewProvider {
+    static var previews: some View {
+        GalleryDetailCell(gallery: .preview)
+    }
+}

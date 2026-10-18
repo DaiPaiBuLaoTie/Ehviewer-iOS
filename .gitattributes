@@ -1,0 +1,4 @@
+*.sh linguist-detectable=false text eol=lf
+*.html linguist-detectable=false
+*.py text eol=lf
+*.yml text eol=lf

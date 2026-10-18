@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      time: '09:00'
+      day: 'monday'
+      interval: 'weekly'
+      timezone: 'Asia/Tokyo'
+    target-branch: 'main'
+    groups:
+      all-updates:
+        update-types:
+          - 'major'
+          - 'minor'
+          - 'patch'
+    open-pull-requests-limit: 5

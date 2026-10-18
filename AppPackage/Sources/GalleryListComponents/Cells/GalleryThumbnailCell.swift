@@ -1,0 +1,103 @@
+import SwiftUI
+import Sharing
+import SFSafeSymbols
+import AppModels
+import TagTranslationFeature
+import AppComponents
+import Kingfisher
+import AppTools
+
+public struct GalleryThumbnailCell: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @SharedReader(.setting) private var setting: Setting
+
+    private let gallery: Gallery
+    private let translateAction: ((String) -> (String, TagTranslation?))?
+    private let downloadBadge: DownloadBadge?
+
+    public init(
+        gallery: Gallery,
+        translateAction: ((String) -> (String, TagTranslation?))? = nil,
+        downloadBadge: DownloadBadge? = nil
+    ) {
+        self.gallery = gallery
+        self.translateAction = translateAction
+        self.downloadBadge = downloadBadge
+    }
+
+    private var backgroundColor: Color {
+        colorScheme == .light ? Color(.systemGray6) : Color(.systemGray5)
+    }
+    private var tagColor: Color {
+        colorScheme == .light ? Color(.systemGray5) : Color(.systemGray4)
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            KFImage(gallery.coverURL)
+                .placeholder { Placeholder(style: .activity(ratio: Defaults.ImageSize.rowAspect)) }
+                .imageModifier(WebtoonModifier(
+                    minAspect: Defaults.ImageSize.webtoonMinAspect,
+                    idealAspect: Defaults.ImageSize.webtoonIdealAspect
+                ))
+                .fade(duration: 0.25)
+                .resizable()
+                .scaledToFit()
+                .overlay {
+                    CategoryLabel(
+                        text: gallery.category.value, color: gallery.color(host: AppUtil.galleryHost),
+                        insets: .init(top: 3, leading: 6, bottom: 3, trailing: 6),
+                        cornerRadius: 15, corners: .bottomLeft
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                }
+            VStack(alignment: .leading, spacing: 5) {
+                Text(gallery.title)
+                    .font(.callout.bold())
+                    .lineLimit(downloadBadge == nil ? 3 : 2)
+                let tagContents = gallery.tagContents(maximum: setting.listTagsNumberMaximum)
+                if setting.showsTagsInList, !tagContents.isEmpty {
+                    TagCloudView(data: tagContents) { content in
+                        let translation = translateAction?(content.rawNamespace + content.text).1
+                        TagCloudCell(
+                            text: translation?.displayValue ?? content.text,
+                            imageURL: translation?.valueImageURL,
+                            showsImages: setting.showsImagesInTags,
+                            font: .caption2, padding: .init(top: 2, leading: 4, bottom: 2, trailing: 4),
+                            textColor: content.backgroundColor != nil ? content.textColor ?? .secondary : .secondary,
+                            backgroundColor: content.backgroundColor ?? tagColor
+                        )
+                    }
+                }
+                HStack(spacing: 10) {
+                    if let downloadBadge {
+                        DownloadBadgeLabel(badge: downloadBadge)
+                    } else {
+                        HStack(spacing: 2) {
+                            Image(systemSymbol: .photoOnRectangleAngled)
+                            Text(String(gallery.pageCount))
+                        }
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if let language = gallery.language {
+                        Text(language.value)
+                    }
+                }
+                .lineLimit(1).font(.footnote).foregroundStyle(.secondary)
+
+                RatingView(rating: gallery.rating).foregroundColor(.yellow).font(.caption)
+            }
+            .padding()
+        }
+        .background(backgroundColor).cornerRadius(15)
+    }
+}
+
+struct GalleryThumbnailCell_Previews: PreviewProvider {
+    static var previews: some View {
+        GalleryThumbnailCell(gallery: .preview)
+            .preferredColorScheme(.dark)
+    }
+}

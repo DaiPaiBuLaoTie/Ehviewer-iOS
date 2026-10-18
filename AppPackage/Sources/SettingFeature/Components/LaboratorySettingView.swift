@@ -1,0 +1,88 @@
+import SwiftUI
+import AppModels
+import Sharing
+import Resources
+import SFSafeSymbols
+import ComposableArchitecture
+import AppComponents
+
+struct LaboratorySettingView: View {
+    private let store: StoreOf<LaboratorySettingReducer>
+    @Shared(.setting) private var setting: Setting
+
+    init(store: StoreOf<LaboratorySettingReducer>) {
+        self.store = store
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack {
+                LaboratoryCell(
+                    isOn: Binding($setting.bypassesSNIFiltering),
+                    title: .bypassesSniFiltering,
+                    symbol: .theatermasksFill, tintColor: .purple
+                )
+            }
+            .padding()
+        }
+        .navigationTitle(.laboratory)
+        .onChange(of: setting.bypassesSNIFiltering) { _, newValue in
+            store.send(.bypassesSNIFilteringChanged(newValue))
+        }
+    }
+}
+
+struct LaboratoryCell: View {
+    @Binding private var isOn: Bool
+    private let title: LocalizedStringResource
+    private let symbol: SFSymbol
+    private let tintColor: Color
+
+    init(
+        isOn: Binding<Bool>, title: LocalizedStringResource,
+        symbol: SFSymbol, tintColor: Color
+    ) {
+        _isOn = isOn
+        self.title = title
+        self.symbol = symbol
+        self.tintColor = tintColor
+    }
+
+    private var bgColor: Color {
+        isOn ? tintColor.opacity(0.2) : Color(.systemGray5)
+    }
+    private var contentColor: Color {
+        isOn ? tintColor : .secondary
+    }
+
+    var body: some View {
+        HStack {
+            Image(systemSymbol: symbol)
+
+            Text(title)
+                .bold()
+        }
+        .foregroundStyle(contentColor)
+        .font(.title2)
+        .frame(maxWidth: .infinity)
+        .contentShape(.rect)
+        .onTapGesture(perform: { isOn.toggle() })
+        .minimumScaleFactor(0.75)
+        .padding(.vertical, 20)
+        .background(bgColor)
+        .cornerRadius(15)
+        .lineLimit(1)
+        .animation(.default, value: isOn)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 15))
+    }
+}
+
+struct LaboratorySettingView_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationStack {
+            LaboratorySettingView(
+                store: .init(initialState: .init(), reducer: LaboratorySettingReducer.init)
+            )
+        }
+    }
+}
