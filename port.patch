@@ -1,0 +1,2101 @@
+diff --git a/.gitignore b/.gitignore
+index 9fdcea4..3ecf91a 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -10,3 +10,11 @@ Config/LocalSigning.xcconfig
+ AppPackage/.build
+ AppPackage/.swiftpm/xcode/xcuserdata
+ AppPackage/.swiftpm/xcode/package.xcworkspace/xcuserdata
++
++# Local unsigned build output and tools
++build/
++.tools/
++.reference/
++*.ipa
++*.xcresult/
++__pycache__/
+diff --git a/App/Info.plist b/App/Info.plist
+index 12259a4..78db130 100644
+--- a/App/Info.plist
++++ b/App/Info.plist
+@@ -4,10 +4,12 @@
+ <dict>
+ 	<key>BGTaskSchedulerPermittedIdentifiers</key>
+ 	<array>
+-		<string>app.ehpanda.downloads.processing</string>
++		<string>org.ehviewer.sxj.ios.downloads.processing</string>
+ 	</array>
+ 	<key>CADisableMinimumFrameDurationOnPhone</key>
+ 	<true/>
++	<key>CFBundleDisplayName</key>
++	<string>EhViewer SXJ</string>
+ 	<key>CFBundleDevelopmentRegion</key>
+ 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+ 	<key>CFBundleExecutable</key>
+@@ -129,7 +131,7 @@
+ 			<key>CFBundleTypeRole</key>
+ 			<string>Editor</string>
+ 			<key>CFBundleURLName</key>
+-			<string>app.ehpanda</string>
++			<string>org.ehviewer.sxj.ios</string>
+ 			<key>CFBundleURLSchemes</key>
+ 			<array>
+ 				<string>ehpanda</string>
+diff --git a/AppPackage/Package.swift b/AppPackage/Package.swift
+index afbacb3..cbb89f0 100644
+--- a/AppPackage/Package.swift
++++ b/AppPackage/Package.swift
+@@ -641,6 +641,9 @@ let targets: [PackageDescription.Target] = [
+             .module(.cookieClient),
+             .module(.dfClient),
+             .module(.fileClient),
++            .module(.downloadClient),
++            .module(.detailFeature),
++            .module(.galleryListComponents),
+             .module(.hapticsClient),
+             .module(.libraryClient),
+             .module(.logsClient),
+diff --git a/AppPackage/Sources/AppModels/Persistent/SXJBlockRule.swift b/AppPackage/Sources/AppModels/Persistent/SXJBlockRule.swift
+new file mode 100644
+index 0000000..b4c90aa
+--- /dev/null
++++ b/AppPackage/Sources/AppModels/Persistent/SXJBlockRule.swift
+@@ -0,0 +1,51 @@
++import Foundation
++import Sharing
++
++/// A local rule. Server-side account filters remain independent.
++public struct SXJBlockRule: Codable, Equatable, Identifiable, Sendable {
++    public enum Kind: String, Codable, CaseIterable, Sendable {
++        case title
++        case uploader
++        case tag
++        case namespace
++    }
++
++    public var id: UUID
++    public var kind: Kind
++    public var value: String
++    public var isEnabled: Bool
++
++    public init(id: UUID = UUID(), kind: Kind, value: String, isEnabled: Bool = true) {
++        self.id = id
++        self.kind = kind
++        self.value = value.trimmingCharacters(in: .whitespacesAndNewlines)
++        self.isEnabled = isEnabled
++    }
++
++    public func matches(_ gallery: Gallery) -> Bool {
++        guard isEnabled, !value.isEmpty else { return false }
++        switch kind {
++        case .title:
++            return gallery.title.localizedCaseInsensitiveContains(value)
++        case .uploader:
++            return gallery.uploader?.caseInsensitiveCompare(value) == .orderedSame
++        case .namespace:
++            return gallery.tags.contains { $0.rawNamespace.caseInsensitiveCompare(value) == .orderedSame }
++        case .tag:
++            let parts = value.split(separator: ":", maxSplits: 1).map(String.init)
++            return gallery.tags.contains { group in
++                guard parts.count == 1
++                    || group.rawNamespace.caseInsensitiveCompare(parts[0]) == .orderedSame
++                else { return false }
++                let expected = parts.last ?? value
++                return group.contents.contains { $0.text.caseInsensitiveCompare(expected) == .orderedSame }
++            }
++        }
++    }
++}
++
++extension SharedKey where Self == AppStorageKey<[SXJBlockRule]>.Default {
++    public static var sxjBlockRules: Self {
++        Self[.appStorage("sxjBlockRules"), default: []]
++    }
++}
+diff --git a/AppPackage/Sources/AppModels/Persistent/SXJLocalFavorites.swift b/AppPackage/Sources/AppModels/Persistent/SXJLocalFavorites.swift
+new file mode 100644
+index 0000000..ea5a957
+--- /dev/null
++++ b/AppPackage/Sources/AppModels/Persistent/SXJLocalFavorites.swift
+@@ -0,0 +1,7 @@
++import Sharing
++
++extension SharedKey where Self == AppStorageKey<[Gallery]>.Default {
++    public static var sxjLocalFavorites: Self {
++        Self[.appStorage("sxjLocalFavorites"), default: []]
++    }
++}
+diff --git a/AppPackage/Sources/AppTools/Defaults.swift b/AppPackage/Sources/AppTools/Defaults.swift
+index 8299392..3b530d3 100644
+--- a/AppPackage/Sources/AppTools/Defaults.swift
++++ b/AppPackage/Sources/AppTools/Defaults.swift
+@@ -3,7 +3,7 @@ import Foundation
+ 
+ public struct Defaults: Sendable {
+     public struct App: Sendable {
+-        public static let identifier = "app.ehpanda"
++        public static let identifier = "org.ehviewer.sxj.ios"
+     }
+     public struct ImageSize: Sendable {
+         public static let rowAspect: CGFloat = 8/11
+diff --git a/AppPackage/Sources/BackgroundProcessingClient/BackgroundProcessingClient.swift b/AppPackage/Sources/BackgroundProcessingClient/BackgroundProcessingClient.swift
+index 2d53f4e..d644553 100644
+--- a/AppPackage/Sources/BackgroundProcessingClient/BackgroundProcessingClient.swift
++++ b/AppPackage/Sources/BackgroundProcessingClient/BackgroundProcessingClient.swift
+@@ -8,7 +8,7 @@ private let logger = Logger(category: .init(describing: BackgroundProcessingClie
+ public enum BackgroundProcessing {
+     /// Fixed task identifier, independent of the bundle id. Must stay in sync with the
+     /// `BGTaskSchedulerPermittedIdentifiers` entry in Info.plist.
+-    public static let downloadTaskIdentifier = "app.ehpanda.downloads.processing"
++    public static let downloadTaskIdentifier = "org.ehviewer.sxj.ios.downloads.processing"
+ }
+ 
+ /// Wraps `BGTaskScheduler` so the app can ask iOS to relaunch it in a discretionary,
+diff --git a/AppPackage/Sources/DFClient/DFClient.swift b/AppPackage/Sources/DFClient/DFClient.swift
+index ff38420..9b786a5 100644
+--- a/AppPackage/Sources/DFClient/DFClient.swift
++++ b/AppPackage/Sources/DFClient/DFClient.swift
+@@ -10,6 +10,7 @@ public struct DFClient: Sendable {
+ extension DFClient {
+     public static let live: Self = .init(
+         setActive: { newValue in
++            SXJNetworkSettings.apply()
+             if newValue {
+                 URLProtocol.registerClass(DFURLProtocol.self)
+             } else {
+diff --git a/AppPackage/Sources/DetailFeature/DetailView+Navigation.swift b/AppPackage/Sources/DetailFeature/DetailView+Navigation.swift
+index fc0fb42..9abb3ba 100644
+--- a/AppPackage/Sources/DetailFeature/DetailView+Navigation.swift
++++ b/AppPackage/Sources/DetailFeature/DetailView+Navigation.swift
+@@ -10,6 +10,15 @@ extension DetailView {
+     func toolbar() -> some ToolbarContent {
+         CustomToolbarItem {
+             ToolbarFeaturesMenu {
++                Button(localFavorites.contains(where: { $0.gid == gid }) ? "取消本地收藏" : "加入本地收藏") {
++                    $localFavorites.withLock { current in
++                        if let index = current.firstIndex(where: { $0.gid == gid }) {
++                            current.remove(at: index)
++                        } else if current.count < 1_000 {
++                            current.insert(store.gallery, at: 0)
++                        }
++                    }
++                }
+                 Button {
+                     store.send(.archivesButtonTapped)
+                 } label: {
+diff --git a/AppPackage/Sources/DetailFeature/DetailView.swift b/AppPackage/Sources/DetailFeature/DetailView.swift
+index 6bbe3e1..d975692 100644
+--- a/AppPackage/Sources/DetailFeature/DetailView.swift
++++ b/AppPackage/Sources/DetailFeature/DetailView.swift
+@@ -1,4 +1,5 @@
+ import SwiftUI
++import Sharing
+ import AppModels
+ import TagTranslationFeature
+ import Resources
+@@ -11,6 +12,7 @@ import ReadingFeature
+ 
+ public struct DetailView: View {
+     @Bindable var store: StoreOf<DetailReducer>
++    @Shared(.sxjLocalFavorites) var localFavorites: [Gallery]
+     let gid: String
+     let blurRadius: Double
+ 
+diff --git a/AppPackage/Sources/GalleryListComponents/GenericList.swift b/AppPackage/Sources/GalleryListComponents/GenericList.swift
+index e6534e5..45cf318 100644
+--- a/AppPackage/Sources/GalleryListComponents/GenericList.swift
++++ b/AppPackage/Sources/GalleryListComponents/GenericList.swift
+@@ -8,6 +8,7 @@ import AppTools
+ 
+ public struct GenericList: View {
+     @SharedReader(.setting) private var setting: Setting
++    @SharedReader(.sxjBlockRules) private var blockRules: [SXJBlockRule]
+ 
+     private let galleries: [Gallery]
+     private let downloadBadges: [String: DownloadBadge]
+@@ -42,13 +43,17 @@ public struct GenericList: View {
+         self.translateAction = translateAction
+     }
+ 
++    private var visibleGalleries: [Gallery] {
++        galleries.filter { gallery in !blockRules.contains { $0.matches(gallery) } }
++    }
++
+     public var body: some View {
+         ZStack {
+             VStack(spacing: 0) {
+                 switch setting.listDisplayMode {
+                 case .detail:
+                     DetailList(
+-                        galleries: galleries, pageNumber: pageNumber,
++                        galleries: visibleGalleries, pageNumber: pageNumber,
+                         footerLoadingState: footerLoadingState, notice: notice,
+                         fetchMoreAction: fetchMoreAction,
+                         navigateAction: navigateAction, translateAction: translateAction,
+@@ -56,7 +61,7 @@ public struct GenericList: View {
+                     )
+                 case .thumbnail:
+                     WaterfallList(
+-                        galleries: galleries, pageNumber: pageNumber,
++                        galleries: visibleGalleries, pageNumber: pageNumber,
+                         footerLoadingState: footerLoadingState, notice: notice,
+                         fetchMoreAction: fetchMoreAction,
+                         navigateAction: navigateAction, translateAction: translateAction,
+@@ -64,6 +69,12 @@ public struct GenericList: View {
+                     )
+                 }
+             }
++            .safeAreaInset(edge: .bottom) {
++                if visibleGalleries.isEmpty, !galleries.isEmpty {
++                    Button("此页全部被屏蔽，加载下一页") { fetchMoreAction?() }
++                        .padding().buttonStyle(.bordered)
++                }
++            }
+             .opacity(loadingState == .idle ? 1 : 0).zIndex(2)
+ 
+             LoadingView()
+@@ -132,6 +143,7 @@ private struct DetailList: View {
+                         downloadBadge: downloadBadges[gallery.gid]
+                     )
+                 }
++                .contextMenu { SXJGalleryActions(gallery: gallery) }
+                 .foregroundColor(.primary)
+                 .onAppear {
+                     if gallery == galleries.last {
+@@ -209,6 +221,7 @@ private struct WaterfallList: View {
+                     )
+                     .tint(.primary).multilineTextAlignment(.leading)
+                 }
++                .contextMenu { SXJGalleryActions(gallery: gallery) }
+                 .buttonStyle(.borderless)
+             }
+             .gridStyle(
+diff --git a/AppPackage/Sources/GalleryListComponents/SXJGalleryActions.swift b/AppPackage/Sources/GalleryListComponents/SXJGalleryActions.swift
+new file mode 100644
+index 0000000..e5a1b18
+--- /dev/null
++++ b/AppPackage/Sources/GalleryListComponents/SXJGalleryActions.swift
+@@ -0,0 +1,35 @@
++import AppModels
++import Sharing
++import SwiftUI
++
++struct SXJGalleryActions: View {
++    let gallery: Gallery
++    @Shared(.sxjLocalFavorites) private var favorites: [Gallery]
++    @Shared(.sxjBlockRules) private var rules: [SXJBlockRule]
++
++    private var isSaved: Bool { favorites.contains { $0.gid == gallery.gid } }
++
++    var body: some View {
++        Button(isSaved ? "从本地收藏移除" : "加入本地收藏") {
++            $favorites.withLock { current in
++                if let index = current.firstIndex(where: { $0.gid == gallery.gid }) {
++                    current.remove(at: index)
++                } else if current.count < 1_000 {
++                    current.insert(gallery, at: 0)
++                }
++            }
++        }
++        .disabled(!isSaved && favorites.count >= 1_000)
++        if let uploader = gallery.uploader, !uploader.isEmpty {
++            Button("屏蔽此上传者") { addRule(.uploader, value: uploader) }
++        }
++        Button("屏蔽此标题") { addRule(.title, value: gallery.title) }
++    }
++
++    private func addRule(_ kind: SXJBlockRule.Kind, value: String) {
++        guard rules.count < 2_000,
++              !rules.contains(where: { $0.kind == kind && $0.value.caseInsensitiveCompare(value) == .orderedSame })
++        else { return }
++        $rules.withLock { $0.append(.init(kind: kind, value: value)) }
++    }
++}
+diff --git a/AppPackage/Sources/NetworkingFeature/DomainResolver.swift b/AppPackage/Sources/NetworkingFeature/DomainResolver.swift
+index ca80d89..87b556e 100644
+--- a/AppPackage/Sources/NetworkingFeature/DomainResolver.swift
++++ b/AppPackage/Sources/NetworkingFeature/DomainResolver.swift
+@@ -1,6 +1,10 @@
++import Foundation
++
+ public struct DomainResolver {
+     public static func resolve(domain: String) -> String? {
+-        ResolvableDomain(rawValue: domain)?.ipPool.randomElement()
++        let text = UserDefaults.standard.string(forKey: SXJNetworkSettings.hostsKey) ?? ""
++        let customHosts = try? SXJNetworkSettings.parseHosts(text)
++        return customHosts?[domain.lowercased()] ?? ResolvableDomain(rawValue: domain)?.ipPool.randomElement()
+     }
+ }
+ 
+diff --git a/AppPackage/Sources/NetworkingFeature/SXJNetworkSettings.swift b/AppPackage/Sources/NetworkingFeature/SXJNetworkSettings.swift
+new file mode 100644
+index 0000000..505dd2f
+--- /dev/null
++++ b/AppPackage/Sources/NetworkingFeature/SXJNetworkSettings.swift
+@@ -0,0 +1,78 @@
++import Foundation
++import Network
++
++public enum SXJNetworkSettings {
++    public static let hostsKey = "sxjCustomHosts"
++    public static let dohKey = "sxjDOHURL"
++    public static let proxyKey = "sxjProxyURL"
++
++    public static func parseHosts(_ text: String) throws -> [String: String] {
++        var result: [String: String] = [:]
++        for line in text.split(whereSeparator: \.isNewline) {
++            let content = line.split(separator: "#", maxSplits: 1).first.map(String.init) ?? ""
++            let parts = content.split(whereSeparator: \.isWhitespace).map(String.init)
++            guard !parts.isEmpty else { continue }
++            guard parts.count >= 2, IPv4Address(parts[0]) != nil || IPv6Address(parts[0]) != nil
++            else { throw ConfigurationError.invalidHosts }
++            for rawDomain in parts.dropFirst() {
++                let domain = rawDomain.lowercased()
++                let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-.")
++                guard domain.count <= 253, !domain.contains("/"), !domain.contains(":"), !domain.isEmpty,
++                      domain.unicodeScalars.allSatisfy({ allowed.contains($0) })
++                else { throw ConfigurationError.invalidHosts }
++                result[domain.lowercased()] = parts[0]
++            }
++        }
++        return result
++    }
++
++    public static func proxyConfiguration(_ text: String) throws -> ProxyConfiguration? {
++        guard !text.isEmpty else { return nil }
++        guard let url = URL(string: text), let host = url.host,
++              let rawPort = url.port, let port = NWEndpoint.Port(rawValue: UInt16(exactly: rawPort) ?? 0),
++              rawPort > 0, rawPort <= 65_535,
++              url.user == nil, url.password == nil,
++              url.path.isEmpty || url.path == "/", url.query == nil, url.fragment == nil
++        else { throw ConfigurationError.invalidProxy }
++        let endpoint = NWEndpoint.hostPort(host: .name(host, nil), port: port)
++        switch url.scheme?.lowercased() {
++        case "http": return ProxyConfiguration(httpCONNECTProxy: endpoint)
++        case "https": return ProxyConfiguration(httpCONNECTProxy: endpoint, tlsOptions: .init())
++        case "socks5": return ProxyConfiguration(socksv5Proxy: endpoint)
++        default: throw ConfigurationError.invalidProxy
++        }
++    }
++
++    public static func validateDOH(_ text: String) throws -> URL? {
++        guard !text.isEmpty else { return nil }
++        guard let url = URL(string: text), url.scheme == "https", url.host != nil,
++              url.user == nil, url.password == nil, url.fragment == nil
++        else { throw ConfigurationError.invalidDOH }
++        return url
++    }
++
++    public static func apply() {
++        let defaults = UserDefaults.standard
++        let resolver = try? validateDOH(defaults.string(forKey: dohKey) ?? "")
++        NWParameters.PrivacyContext.default.requireEncryptedNameResolution(
++            resolver != nil, fallbackResolver: resolver.map { .https($0, serverAddresses: []) }
++        )
++        let proxy = try? proxyConfiguration(defaults.string(forKey: proxyKey) ?? "")
++        NWParameters.PrivacyContext.default.proxyConfigurations = proxy.map { [$0] } ?? []
++        NWParameters.PrivacyContext.default.flushCache()
++    }
++
++    public enum ConfigurationError: LocalizedError {
++        case invalidHosts
++        case invalidProxy
++        case invalidDOH
++
++        public var errorDescription: String? {
++            switch self {
++            case .invalidHosts: return "Hosts 格式应为：IP地址 域名。每行可包含多个域名，支持 # 注释。"
++            case .invalidProxy: return "代理格式应为 http://主机:端口、https://主机:端口 或 socks5://主机:端口。"
++            case .invalidDOH: return "加密 DNS 必须是有效的 HTTPS 地址。"
++            }
++        }
++    }
++}
+diff --git a/AppPackage/Sources/SettingFeature/Components/WebView.swift b/AppPackage/Sources/SettingFeature/Components/WebView.swift
+index 246c6aa..26bab77 100644
+--- a/AppPackage/Sources/SettingFeature/Components/WebView.swift
++++ b/AppPackage/Sources/SettingFeature/Components/WebView.swift
+@@ -1,11 +1,10 @@
+ import AppTools
+ import WebKit
+ import AppModels
+-import OSLogExt
++import NetworkingFeature
+ import SwiftUI
+ 
+-private let logger = Logger(category: .init(describing: WebView.self))
+-
++/// Each presentation starts with the native account's cookies, avoiding stale WebKit sessions after logout.
+ struct WebView: UIViewControllerRepresentable {
+     private let url: URL
+     private let loginDoneAction: (() -> Void)?
+@@ -15,61 +14,81 @@ struct WebView: UIViewControllerRepresentable {
+         self.loginDoneAction = loginDoneAction
+     }
+ 
+-    final class Coodinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+-        private var parent: WebView
++    @MainActor
++    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
++        private let parent: WebView
++        private var completedLogin = false
+ 
+-        init(parent: WebView) {
+-            self.parent = parent
+-        }
++        init(parent: WebView) { self.parent = parent }
+ 
+         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+-            guard parent.url.absoluteString == Defaults.URL.webLogin.absoluteString, let webViewURL = webView.url,
+-                  let queryItems = URLComponents(url: webViewURL, resolvingAgainstBaseURL: false)?.queryItems,
+-                  queryItems.contains(where: { queryItem in
+-                    queryItem.name == Defaults.URL.Component.Key.code.rawValue
+-                        && queryItem.value == Defaults.URL.Component.Value.zeroOne.rawValue
+-                  })
+-            else { return }
+-
+-            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+-                cookies.forEach { HTTPCookieStorage.shared.setCookie($0) }
++            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
++                for cookie in cookies where Self.isAccountDomain(cookie.domain) {
++                    HTTPCookieStorage.shared.setCookie(cookie)
++                }
++                guard let self, !self.completedLogin, self.parent.loginDoneAction != nil,
++                      cookies.contains(where: { $0.name == "ipb_member_id" && !$0.value.isEmpty }),
++                      cookies.contains(where: { $0.name == "ipb_pass_hash" && !$0.value.isEmpty })
++                else { return }
++                self.completedLogin = true
++                self.parent.loginDoneAction?()
+             }
++        }
+ 
+-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+-                self?.parent.loginDoneAction?()
++        func webView(
++            _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
++            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
++        ) {
++            guard let url = navigationAction.request.url else {
++                decisionHandler(.cancel)
++                return
+             }
++            decisionHandler(["https", "http", "about"].contains(url.scheme ?? "") ? .allow : .cancel)
+         }
+ 
+-        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+-            logger.error("\(error, privacy: .public)")
++        func webView(
++            _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
++            for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures
++        ) -> WKWebView? {
++            if navigationAction.targetFrame == nil,
++               let scheme = navigationAction.request.url?.scheme, ["https", "http"].contains(scheme) {
++                webView.load(navigationAction.request)
++            }
++            return nil
+         }
+-    }
+ 
+-    func makeCoordinator() -> WebView.Coodinator {
+-        Coodinator(parent: self)
++        static func isAccountDomain(_ domain: String) -> Bool {
++            let host = domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
++            return ["e-hentai.org", "exhentai.org"].contains { host == $0 || host.hasSuffix("." + $0) }
++        }
+     }
+ 
+-    func makeUIViewController(context: Context) -> EmbeddedWebviewController {
+-        let webViewController = EmbeddedWebviewController(coordinator: context.coordinator)
+-        webViewController.loadUrl(url)
++    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+ 
+-        return webViewController
++    func makeUIViewController(context: Context) -> EmbeddedWebviewController {
++        let controller = EmbeddedWebviewController(coordinator: context.coordinator)
++        controller.loadUrl(url)
++        return controller
+     }
+ 
+-    func updateUIViewController(
+-        _ uiViewController: EmbeddedWebviewController,
+-        context: UIViewControllerRepresentableContext<WebView>
+-    ) {}
++    func updateUIViewController(_ controller: EmbeddedWebviewController, context: Context) {}
+ }
+ 
++@MainActor
+ final class EmbeddedWebviewController: UIViewController {
+-    private var webview: WKWebView
+-
++    private let webview: WKWebView
++    private let controls = UIToolbar()
+     private weak var delegate: WebView.Coordinator?
+ 
+     init(coordinator: WebView.Coordinator) {
++        let configuration = WKWebViewConfiguration()
++        configuration.websiteDataStore = .nonPersistent()
++        let text = UserDefaults.standard.string(forKey: SXJNetworkSettings.proxyKey) ?? ""
++        if let proxy = try? SXJNetworkSettings.proxyConfiguration(text) {
++            configuration.websiteDataStore.proxyConfigurations = [proxy]
++        }
++        webview = WKWebView(frame: .zero, configuration: configuration)
+         delegate = coordinator
+-        webview = WKWebView()
+         super.init(nibName: nil, bundle: nil)
+     }
+ 
+@@ -79,13 +98,42 @@ final class EmbeddedWebviewController: UIViewController {
+     }
+ 
+     func loadUrl(_ url: URL) {
+-        let request = URLRequest(url: url)
+-        webview.load(request)
++        let cookieStore = webview.configuration.websiteDataStore.httpCookieStore
++        let cookies = (HTTPCookieStorage.shared.cookies ?? []).filter { WebView.Coordinator.isAccountDomain($0.domain) }
++        Task { @MainActor in
++            for cookie in cookies {
++                await withCheckedContinuation { continuation in
++                    cookieStore.setCookie(cookie) { continuation.resume() }
++                }
++            }
++            webview.load(URLRequest(url: url))
++        }
+     }
+ 
+     override func loadView() {
++        view = UIView()
++        view.backgroundColor = .systemBackground
+         webview.navigationDelegate = delegate
+         webview.uiDelegate = delegate
+-        view = webview
++        webview.translatesAutoresizingMaskIntoConstraints = false
++        controls.translatesAutoresizingMaskIntoConstraints = false
++        view.addSubview(webview)
++        view.addSubview(controls)
++        controls.items = [
++            UIBarButtonItem(title: "后退", primaryAction: UIAction { [weak self] _ in self?.webview.goBack() }),
++            .flexibleSpace(),
++            UIBarButtonItem(title: "前进", primaryAction: UIAction { [weak self] _ in self?.webview.goForward() }),
++            .flexibleSpace(),
++            UIBarButtonItem(title: "刷新", primaryAction: UIAction { [weak self] _ in self?.webview.reload() })
++        ]
++        NSLayoutConstraint.activate([
++            webview.leadingAnchor.constraint(equalTo: view.leadingAnchor),
++            webview.trailingAnchor.constraint(equalTo: view.trailingAnchor),
++            webview.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
++            webview.bottomAnchor.constraint(equalTo: controls.topAnchor),
++            controls.leadingAnchor.constraint(equalTo: view.leadingAnchor),
++            controls.trailingAnchor.constraint(equalTo: view.trailingAnchor),
++            controls.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
++        ])
+     }
+ }
+diff --git a/AppPackage/Sources/SettingFeature/SXJ/SXJBackup.swift b/AppPackage/Sources/SettingFeature/SXJ/SXJBackup.swift
+new file mode 100644
+index 0000000..4bc7b15
+--- /dev/null
++++ b/AppPackage/Sources/SettingFeature/SXJ/SXJBackup.swift
+@@ -0,0 +1,75 @@
++import AppModels
++import Foundation
++import SwiftUI
++import UniformTypeIdentifiers
++
++/// Portable app preferences; cookies, passwords and downloaded images are excluded.
++struct SXJBackup: Codable {
++    var format = "ehviewer-sxj-ios"
++    var version = 1
++    var creationDate = Date()
++    var setting: Setting
++    var searchFilter: Filter
++    var globalFilter: Filter
++    var watchedFilter: Filter
++    var historyKeywords: [String]
++    var quickSearchWords: [QuickSearchWord]
++    var galleryHistory: [GalleryHistoryEntry]
++    var blockRules: [SXJBlockRule]
++    var localFavorites: [Gallery]?
++
++    func encoded() throws -> Data {
++        let encoder = JSONEncoder()
++        encoder.dateEncodingStrategy = .iso8601
++        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
++        return try encoder.encode(self)
++    }
++
++    static func decode(_ data: Data) throws -> Self {
++        guard data.count <= 16 * 1_024 * 1_024 else { throw BackupError.tooLarge }
++        let decoder = JSONDecoder()
++        decoder.dateDecodingStrategy = .iso8601
++        let backup = try decoder.decode(Self.self, from: data)
++        guard backup.format == "ehviewer-sxj-ios", backup.version == 1 else { throw BackupError.unsupported }
++        guard backup.galleryHistory.count <= 10_000,
++              backup.historyKeywords.count <= 1_000,
++              backup.quickSearchWords.count <= 1_000,
++              backup.blockRules.count <= 2_000,
++              (backup.localFavorites?.count ?? 0) <= 1_000,
++              Set(backup.blockRules.map(\.id)).count == backup.blockRules.count,
++              Set(backup.quickSearchWords.map(\.id)).count == backup.quickSearchWords.count,
++              Set(backup.galleryHistory.map(\.gid)).count == backup.galleryHistory.count
++        else { throw BackupError.invalidRecords }
++        return backup
++    }
++
++    enum BackupError: LocalizedError {
++        case tooLarge
++        case unsupported
++        case invalidRecords
++
++        var errorDescription: String? {
++            switch self {
++            case .tooLarge: return "备份超过 16 MB，请选择应用导出的 JSON 备份。"
++            case .unsupported: return "备份格式或版本不受支持。Android 数据库需要先转换，不能直接作为此备份导入。"
++            case .invalidRecords: return "备份含重复标识或超出记录上限，未修改当前数据。"
++            }
++        }
++    }
++}
++
++struct SXJBackupDocument: FileDocument {
++    static var readableContentTypes: [UTType] { [.json] }
++    var data: Data
++
++    init(data: Data = Data()) { self.data = data }
++
++    init(configuration: ReadConfiguration) throws {
++        guard let data = configuration.file.regularFileContents else { throw CocoaError(.fileReadCorruptFile) }
++        self.data = data
++    }
++
++    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
++        FileWrapper(regularFileWithContents: data)
++    }
++}
+diff --git a/AppPackage/Sources/SettingFeature/SXJ/SXJBlockRulesView.swift b/AppPackage/Sources/SettingFeature/SXJ/SXJBlockRulesView.swift
+new file mode 100644
+index 0000000..b516d3f
+--- /dev/null
++++ b/AppPackage/Sources/SettingFeature/SXJ/SXJBlockRulesView.swift
+@@ -0,0 +1,67 @@
++import AppModels
++import Sharing
++import SwiftUI
++
++struct SXJBlockRulesView: View {
++    @Shared(.sxjBlockRules) private var rules: [SXJBlockRule]
++    @State private var kind: SXJBlockRule.Kind = .title
++    @State private var value = ""
++    @State private var failure: String?
++
++    var body: some View {
++        Form {
++            Section("添加本地屏蔽规则") {
++                Picker("匹配内容", selection: $kind) {
++                    Text("标题包含").tag(SXJBlockRule.Kind.title)
++                    Text("上传者（完整名称）").tag(SXJBlockRule.Kind.uploader)
++                    Text("标签（可含命名空间）").tag(SXJBlockRule.Kind.tag)
++                    Text("命名空间").tag(SXJBlockRule.Kind.namespace)
++                }
++                TextField("输入匹配文字", text: $value)
++                    .textInputAutocapitalization(.never).autocorrectionDisabled()
++                Button("添加规则") { addRule() }
++                    .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || rules.count >= 2_000)
++            }
++            Section("已有规则") {
++                ForEach(rules) { rule in
++                    HStack {
++                        VStack(alignment: .leading) {
++                            Text(rule.value)
++                            Text(rule.kind.rawValue).font(.caption).foregroundStyle(.secondary)
++                        }
++                        Spacer()
++                        Button(rule.isEnabled ? "停用" : "启用") {
++                            $rules.withLock { current in
++                                guard let index = current.firstIndex(where: { $0.id == rule.id }) else { return }
++                                current[index].isEnabled.toggle()
++                            }
++                        }
++                        .buttonStyle(.borderless)
++                    }
++                }
++                .onDelete { offsets in $rules.withLock { $0.remove(atOffsets: offsets) } }
++                .onMove { source, destination in
++                    $rules.withLock { $0.move(fromOffsets: source, toOffset: destination) }
++                }
++            }
++            Section {
++                Text("规则应用于首页、搜索和收藏列表。标题使用包含匹配；上传者和标签使用完整匹配，忽略大小写。")
++                    .font(.footnote).foregroundStyle(.secondary)
++                if let failure { Text(failure).foregroundStyle(.red) }
++            }
++        }
++        .navigationTitle("本地屏蔽").toolbar { EditButton() }
++    }
++
++    private func addRule() {
++        let rule = SXJBlockRule(kind: kind, value: value)
++        guard !rules.contains(where: { $0.kind == kind && $0.value.caseInsensitiveCompare(rule.value) == .orderedSame })
++        else {
++            failure = "该规则已经存在。"
++            return
++        }
++        $rules.withLock { $0.append(rule) }
++        value = ""
++        failure = nil
++    }
++}
+diff --git a/AppPackage/Sources/SettingFeature/SXJ/SXJFolderImporter.swift b/AppPackage/Sources/SettingFeature/SXJ/SXJFolderImporter.swift
+new file mode 100644
+index 0000000..3e9655a
+--- /dev/null
++++ b/AppPackage/Sources/SettingFeature/SXJ/SXJFolderImporter.swift
+@@ -0,0 +1,116 @@
++import AppModels
++import AppTools
++import CryptoKit
++import DownloadClient
++import Foundation
++import ImageIO
++
++/// Imports user-selected image folders without modifying the original files.
++actor SXJFolderImporter {
++    private let extensions: Set<String> = ["jpg", "jpeg", "png", "gif", "webp", "avif", "heic", "apng", "bmp"]
++
++    func importFolder(_ source: URL, host: GalleryHost) throws -> Int {
++        let access = source.startAccessingSecurityScopedResource()
++        defer { if access { source.stopAccessingSecurityScopedResource() } }
++        let manager = FileManager()
++        let root = source.resolvingSymlinksInPath().standardizedFileURL
++        let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
++        guard let enumerator = manager.enumerator(
++            at: root, includingPropertiesForKeys: Array(resourceKeys), options: [.skipsHiddenFiles]
++        ) else { throw CocoaError(.fileReadNoPermission) }
++        var groups: [URL: [URL]] = [:]
++        var bytes = 0
++        var pages = 0
++        for case let file as URL in enumerator {
++            try Task.checkCancellation()
++            let values = try file.resourceValues(forKeys: resourceKeys)
++            guard values.isSymbolicLink != true, values.isRegularFile == true,
++                  extensions.contains(file.pathExtension.lowercased()),
++                  file.resolvingSymlinksInPath().path.hasPrefix(root.path + "/")
++            else { continue }
++            bytes += values.fileSize ?? 0
++            pages += 1
++            guard pages <= 20_000, bytes <= 16 * 1_024 * 1_024 * 1_024,
++                  (values.fileSize ?? 0) <= 256 * 1_024 * 1_024
++            else { throw ImportError.limitExceeded }
++            var folder = file.deletingLastPathComponent()
++            if folder.lastPathComponent.lowercased() == "pages" { folder.deleteLastPathComponent() }
++            groups[folder, default: []].append(file)
++        }
++        guard !groups.isEmpty else { throw ImportError.noImages }
++        var imported = 0
++        for (folder, files) in groups.sorted(by: { $0.key.path < $1.key.path }) {
++            try Task.checkCancellation()
++            try importBook(folder: folder, images: files, host: host, manager: manager)
++            imported += 1
++        }
++        return imported
++    }
++
++    private func importBook(folder: URL, images: [URL], host: GalleryHost, manager: FileManager) throws {
++        let storage = DownloadStore()
++        try storage.ensureRootDirectory()
++        let parent = storage.userFolderURL(name: "Imported")
++        try manager.createDirectory(at: parent, withIntermediateDirectories: true)
++        let identity = "local-" + UUID().uuidString.lowercased()
++        let token = "local"
++        let name = storage.makeFolderRelativePath(gid: identity, token: token, title: folder.lastPathComponent)
++        let destination = parent.appendingPathComponent(name, isDirectory: true)
++        let staging = parent.appendingPathComponent(".import-" + UUID().uuidString, isDirectory: true)
++        try manager.createDirectory(at: staging, withIntermediateDirectories: true)
++        do {
++            var hashes: [Int: String] = [:]
++            let sorted = images.sorted {
++                $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
++            }
++            for (offset, source) in sorted.enumerated() {
++                try Task.checkCancellation()
++                let index = offset + 1
++                let relative = storage.makePageRelativePath(
++                    gid: identity, token: token, index: index, fileExtension: source.pathExtension.lowercased()
++                )
++                let target = staging.appendingPathComponent(relative)
++                try manager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
++                var failure: Error?
++                var coordinationError: NSError?
++                NSFileCoordinator().coordinate(readingItemAt: source, error: &coordinationError) { localURL in
++                    do { try manager.copyItem(at: localURL, to: target) } catch { failure = error }
++                }
++                if let coordinationError { throw coordinationError }
++                if let failure { throw failure }
++                guard CGImageSourceCreateWithURL(target as CFURL, nil) != nil else { throw ImportError.invalidImage }
++                hashes[index] = try storage.fileHash(at: target)
++                if index == 1 {
++                    let cover = storage.makeCoverRelativePath(
++                        gid: identity, token: token, fileExtension: source.pathExtension.lowercased()
++                    )
++                    try manager.copyItem(at: target, to: staging.appendingPathComponent(cover))
++                }
++            }
++            let manifest = DownloadManifest(
++                gid: identity, host: host, token: token, title: folder.lastPathComponent,
++                jpnTitle: nil, category: .misc, language: .other, remoteCoverURL: nil,
++                uploader: nil, tags: [], postedDate: Date(), rating: 0, pages: hashes
++            )
++            try storage.writeManifest(manifest, folderURL: staging)
++            try manager.moveItem(at: staging, to: destination)
++        } catch {
++            try? manager.removeItem(at: staging)
++            throw error
++        }
++    }
++
++    enum ImportError: LocalizedError {
++        case noImages
++        case invalidImage
++        case limitExceeded
++
++        var errorDescription: String? {
++            switch self {
++            case .noImages: return "所选目录没有支持的图片。请先解压压缩包，再选择图片目录。"
++            case .invalidImage: return "目录中存在无法识别的图片，本画廊未写入下载库。"
++            case .limitExceeded: return "单次导入上限为 20,000 页、16 GB，单张图片最多 256 MB。请分批导入。"
++            }
++        }
++    }
++}
+diff --git a/AppPackage/Sources/SettingFeature/SXJ/SXJLocalFavoritesFeature.swift b/AppPackage/Sources/SettingFeature/SXJ/SXJLocalFavoritesFeature.swift
+new file mode 100644
+index 0000000..3b535e2
+--- /dev/null
++++ b/AppPackage/Sources/SettingFeature/SXJ/SXJLocalFavoritesFeature.swift
+@@ -0,0 +1,49 @@
++import AppModels
++import ComposableArchitecture
++import DetailFeature
++import Sharing
++import SwiftUI
++
++@Reducer
++struct SXJLocalFavoritesFeature {
++    @ObservableState
++    struct State: Equatable {
++        @Shared(.sxjLocalFavorites) var favorites: [Gallery]
++        var path = StackState<GalleryPath.State>()
++        var keyword = ""
++
++        var filteredFavorites: [Gallery] {
++            guard !keyword.isEmpty else { return favorites }
++            return favorites.filter { $0.title.localizedCaseInsensitiveContains(keyword) }
++        }
++    }
++
++    enum Action: BindableAction {
++        case binding(BindingAction<State>)
++        case path(StackActionOf<GalleryPath>)
++        case openGallery(Gallery)
++        case flushReading
++    }
++
++    var body: some Reducer<State, Action> {
++        BindingReducer()
++        Reduce { state, action in
++            switch action {
++            case .openGallery(let gallery):
++                state.path.appendGuardingDuplicate(.detail(.init(gallery: gallery)))
++                return .none
++            case let .path(.element(_, action: elementAction)):
++                if let next = GalleryNavigation.nextScreen(for: elementAction) {
++                    state.path.appendGuardingDuplicate(next)
++                }
++                return .none
++            case .flushReading:
++                guard let flush = state.path.topReadingFlush else { return .none }
++                return .send(.path(.element(id: flush.id, action: flush.action)))
++            case .binding, .path:
++                return .none
++            }
++        }
++        .forEach(\.path, action: \.path, element: GalleryPath.init)
++    }
++}
+diff --git a/AppPackage/Sources/SettingFeature/SXJ/SXJLocalFavoritesView.swift b/AppPackage/Sources/SettingFeature/SXJ/SXJLocalFavoritesView.swift
+new file mode 100644
+index 0000000..5cd3c20
+--- /dev/null
++++ b/AppPackage/Sources/SettingFeature/SXJ/SXJLocalFavoritesView.swift
+@@ -0,0 +1,42 @@
++import AppModels
++import ComposableArchitecture
++import DetailFeature
++import GalleryListComponents
++import Sharing
++import SFSafeSymbols
++import SwiftUI
++
++struct SXJLocalFavoritesView: View {
++    @Environment(\.scenePhase) private var scenePhase
++    @SharedReader(.setting) private var setting: Setting
++    @State private var store = Store(
++        initialState: SXJLocalFavoritesFeature.State(), reducer: SXJLocalFavoritesFeature.init
++    )
++
++    var body: some View {
++        GalleryNavigationContainer(
++            store: store, state: \.path, action: \.path, blurRadius: setting.backgroundBlurRadius
++        ) {
++            content
++                .navigationTitle("本地收藏")
++        }
++        .onChange(of: scenePhase) { _, phase in
++            if phase != .active { store.send(.flushReading) }
++        }
++    }
++
++    private var content: some View {
++        @Bindable var store = store
++        return GenericList(
++            galleries: store.filteredFavorites, pageNumber: nil,
++            loadingState: .idle, footerLoadingState: .idle,
++            navigateAction: { store.send(.openGallery($0)) }
++        )
++        .searchable(text: $store.keyword, prompt: "搜索本地收藏")
++        .overlay {
++            if store.favorites.isEmpty {
++                ContentUnavailableView("暂无本地收藏", systemSymbol: .bookmark, description: Text("长按画廊可加入本地收藏。"))
++            }
++        }
++    }
++}
+diff --git a/AppPackage/Sources/SettingFeature/SXJ/SXJLocalImportView.swift b/AppPackage/Sources/SettingFeature/SXJ/SXJLocalImportView.swift
+new file mode 100644
+index 0000000..3b60c8a
+--- /dev/null
++++ b/AppPackage/Sources/SettingFeature/SXJ/SXJLocalImportView.swift
+@@ -0,0 +1,53 @@
++import AppModels
++import ComposableArchitecture
++import DownloadClient
++import Sharing
++import SwiftUI
++import UniformTypeIdentifiers
++
++struct SXJLocalImportView: View {
++    @SharedReader(.setting) private var setting: Setting
++    @Dependency(\.downloadClient) private var downloadClient
++    @State private var choosing = false
++    @State private var working = false
++    @State private var status: String?
++    private let importer = SXJFolderImporter()
++
++    var body: some View {
++        Form {
++            Section("导入图片目录") {
++                Button("从“文件”选择目录") { choosing = true }
++                    .disabled(working)
++                    .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
++                        beginImport(result)
++                    }
++                if working { ProgressView("正在复制和校验图片…") }
++                Text("选择一个画廊或包含多个画廊的目录。图片按文件名自然排序，导入后在“下载”的 Imported 文件夹中离线阅读。原文件会保留。")
++                Text("支持 JPEG、PNG、GIF、WebP、AVIF、HEIC 等系统可解码图片。ZIP、7z、RAR 请先解压。")
++                    .font(.footnote).foregroundStyle(.secondary)
++            }
++            if let status { Section { Text(status) } }
++        }
++        .navigationTitle("本地画廊导入")
++    }
++
++    private func beginImport(_ result: Result<URL, Error>) {
++        do {
++            let source = try result.get()
++            working = true
++            status = nil
++            let host = setting.galleryHost
++            Task {
++                do {
++                    let count = try await importer.importFolder(source, host: host)
++                    await downloadClient.refreshDownloads()
++                    status = "导入完成，画廊数量：" + String(count)
++                } catch {
++                    await downloadClient.refreshDownloads()
++                    status = error.localizedDescription + " 已完成的画廊仍保留在下载列表。"
++                }
++                working = false
++            }
++        } catch { status = error.localizedDescription }
++    }
++}
+diff --git a/AppPackage/Sources/SettingFeature/SXJ/SXJNetworkView.swift b/AppPackage/Sources/SettingFeature/SXJ/SXJNetworkView.swift
+new file mode 100644
+index 0000000..4b37540
+--- /dev/null
++++ b/AppPackage/Sources/SettingFeature/SXJ/SXJNetworkView.swift
+@@ -0,0 +1,60 @@
++import AppModels
++import ComposableArchitecture
++import DFClient
++import NetworkingFeature
++import Sharing
++import SwiftUI
++
++struct SXJNetworkView: View {
++    @Shared(.setting) private var setting: Setting
++    @Dependency(\.dfClient) private var dfClient
++    @State private var hosts = UserDefaults.standard.string(forKey: SXJNetworkSettings.hostsKey) ?? ""
++    @State private var doh = UserDefaults.standard.string(forKey: SXJNetworkSettings.dohKey) ?? ""
++    @State private var proxy = UserDefaults.standard.string(forKey: SXJNetworkSettings.proxyKey) ?? ""
++    @State private var status: String?
++
++    var body: some View {
++        Form {
++            Section("自定义 Hosts") {
++                TextEditor(text: $hosts).font(.system(.footnote, design: .monospaced)).frame(minHeight: 130)
++                    .textInputAutocapitalization(.never).autocorrectionDisabled()
++                Text("格式：IP地址 域名。自定义 Hosts 用于实验室的 SNI 直连模式；留空使用内置地址。")
++                    .font(.footnote).foregroundStyle(.secondary)
++            }
++            Section("DNS over HTTPS") {
++                TextField("留空使用系统 DNS", text: $doh)
++                    .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
++                Text("例如 https://cloudflare-dns.com/dns-query。系统已配置加密 DNS 或 Private Relay 时，由系统选择解析服务。")
++                    .font(.footnote).foregroundStyle(.secondary)
++            }
++            Section("应用代理") {
++                TextField("http(s)://主机:端口 或 socks5://主机:端口", text: $proxy)
++                    .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
++                Text("设置代理后关闭 SNI 直连，新的请求使用代理。留空恢复系统网络设置。代理地址暂不支持用户名密码。")
++                    .font(.footnote).foregroundStyle(.secondary)
++            }
++            Section {
++                Button("保存并应用") { save() }
++                if let status { Text(status).textSelection(.enabled) }
++            }
++        }
++        .navigationTitle("网络设置")
++    }
++
++    private func save() {
++        do {
++            let hostText = hosts.trimmingCharacters(in: .whitespacesAndNewlines)
++            let dohText = doh.trimmingCharacters(in: .whitespacesAndNewlines)
++            let proxyText = proxy.trimmingCharacters(in: .whitespacesAndNewlines)
++            _ = try SXJNetworkSettings.parseHosts(hostText)
++            _ = try SXJNetworkSettings.validateDOH(dohText)
++            _ = try SXJNetworkSettings.proxyConfiguration(proxyText)
++            UserDefaults.standard.set(hostText, forKey: SXJNetworkSettings.hostsKey)
++            UserDefaults.standard.set(dohText, forKey: SXJNetworkSettings.dohKey)
++            UserDefaults.standard.set(proxyText, forKey: SXJNetworkSettings.proxyKey)
++            if !proxyText.isEmpty { $setting.withLock { $0.bypassesSNIFiltering = false } }
++            dfClient.setActive(setting.bypassesSNIFiltering)
++            status = "网络设置已保存，新请求生效。已建立的连接可能需要退出并重新打开应用。"
++        } catch { status = error.localizedDescription }
++    }
++}
+diff --git a/AppPackage/Sources/SettingFeature/SXJ/SXJToolboxView.swift b/AppPackage/Sources/SettingFeature/SXJ/SXJToolboxView.swift
+new file mode 100644
+index 0000000..77912ff
+--- /dev/null
++++ b/AppPackage/Sources/SettingFeature/SXJ/SXJToolboxView.swift
+@@ -0,0 +1,119 @@
++import AppModels
++import AppTools
++import Sharing
++import SwiftUI
++import UniformTypeIdentifiers
++
++struct SXJToolboxView: View {
++    @Shared(.setting) private var setting: Setting
++    @Shared(.searchFilter) private var searchFilter: Filter
++    @Shared(.globalFilter) private var globalFilter: Filter
++    @Shared(.watchedFilter) private var watchedFilter: Filter
++    @Shared(.historyKeywords) private var historyKeywords: [String]
++    @Shared(.quickSearchWords) private var quickSearchWords: [QuickSearchWord]
++    @Shared(.galleryHistory) private var galleryHistory: [GalleryHistoryEntry]
++    @Shared(.sxjBlockRules) private var blockRules: [SXJBlockRule]
++    @Shared(.sxjLocalFavorites) private var localFavorites: [Gallery]
++    @State private var showingFavorites = false
++    @State private var exporting = false
++    @State private var importing = false
++    @State private var confirmingImport = false
++    @State private var document = SXJBackupDocument()
++    @State private var pendingBackup: SXJBackup?
++    @State private var status: String?
++
++    var body: some View {
++        Form {
++            Section("站点与账号") {
++                sitePage("标签订阅与屏蔽", path: "mytags")
++                sitePage("站点配置", path: "uconfig.php")
++                sitePage("配额、积分与账号信息", path: "home.php")
++                NavigationLink("站点新闻") { WebView(url: Defaults.URL.news).navigationTitle("站点新闻") }
++                NavigationLink("论坛") { WebView(url: Defaults.URL.forum).navigationTitle("论坛") }
++            }
++            Section("本地管理") {
++                Button("本地收藏") { showingFavorites = true }
++                    .sheet(isPresented: $showingFavorites) { SXJLocalFavoritesView() }
++                NavigationLink("标题、上传者和标签屏蔽") { SXJBlockRulesView() }
++                NavigationLink("本地画廊导入") { SXJLocalImportView() }
++                NavigationLink("网络与自定义 Hosts") { SXJNetworkView() }
++            }
++            Section("数据备份") {
++                Button("导出设置、历史和快速搜索") { exportBackup() }
++                    .fileExporter(
++                        isPresented: $exporting, document: document,
++                        contentType: .json, defaultFilename: "EhViewer-SXJ-backup"
++                    ) { result in
++                        if case .failure(let error) = result { status = error.localizedDescription }
++                    }
++                Button(pendingBackup == nil ? "选择备份文件" : "确认恢复已选择的备份") {
++                    if pendingBackup == nil { importing = true } else { confirmingImport = true }
++                }
++                .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
++                    importBackup(result)
++                }
++                .confirmationDialog("恢复将覆盖当前设置、历史和快速搜索。", isPresented: $confirmingImport) {
++                    Button("恢复备份", role: .destructive) { applyBackup() }
++                    Button("取消", role: .cancel) { pendingBackup = nil }
++                }
++                Text("备份包含设置、筛选、本地屏蔽、历史记录和快速搜索，不包含登录 Cookie 或下载图片。下载文件可通过“文件”应用复制。")
++                    .font(.footnote).foregroundStyle(.secondary)
++            }
++            if let status {
++                Section { Text(status).textSelection(.enabled) }
++            }
++        }
++        .navigationTitle("扩展工具")
++    }
++
++    private func sitePage(_ title: String, path: String) -> some View {
++        NavigationLink(title) {
++            WebView(url: setting.galleryHost.url.appendingPathComponent(path)).navigationTitle(title)
++        }
++    }
++
++    private func exportBackup() {
++        do {
++            document = try SXJBackupDocument(data: SXJBackup(
++                setting: setting, searchFilter: searchFilter, globalFilter: globalFilter,
++                watchedFilter: watchedFilter, historyKeywords: historyKeywords,
++                quickSearchWords: quickSearchWords, galleryHistory: galleryHistory,
++                blockRules: blockRules, localFavorites: localFavorites
++            ).encoded())
++            exporting = true
++            status = nil
++        } catch { status = error.localizedDescription }
++    }
++
++    private func importBackup(_ result: Result<URL, Error>) {
++        do {
++            let url = try result.get()
++            let accessed = url.startAccessingSecurityScopedResource()
++            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
++            var dataResult: Result<Data, Error>?
++            var coordinationError: NSError?
++            NSFileCoordinator().coordinate(readingItemAt: url, error: &coordinationError) { localURL in
++                dataResult = Result { try Data(contentsOf: localURL) }
++            }
++            if let coordinationError { throw coordinationError }
++            guard let dataResult else { throw CocoaError(.fileReadUnknown) }
++            pendingBackup = try SXJBackup.decode(dataResult.get())
++            status = "备份已验证。点击确认恢复后才会修改当前数据。"
++        } catch { status = error.localizedDescription }
++    }
++
++    private func applyBackup() {
++        guard let backup = pendingBackup else { return }
++        $setting.withLock { $0 = backup.setting }
++        $searchFilter.withLock { $0 = backup.searchFilter }
++        $globalFilter.withLock { $0 = backup.globalFilter }
++        $watchedFilter.withLock { $0 = backup.watchedFilter }
++        $historyKeywords.withLock { $0 = Array(backup.historyKeywords.suffix(20)) }
++        $quickSearchWords.withLock { $0 = backup.quickSearchWords }
++        $galleryHistory.withLock { $0 = Array(backup.galleryHistory.prefix(GalleryHistoryEntry.historyCap)) }
++        $blockRules.withLock { $0 = backup.blockRules }
++        if let favorites = backup.localFavorites { $localFavorites.withLock { $0 = favorites } }
++        pendingBackup = nil
++        status = "备份已恢复。请重新打开列表查看更新后的数据。"
++    }
++}
+diff --git a/AppPackage/Sources/SettingFeature/SettingView.swift b/AppPackage/Sources/SettingFeature/SettingView.swift
+index 951a582..413874a 100644
+--- a/AppPackage/Sources/SettingFeature/SettingView.swift
++++ b/AppPackage/Sources/SettingFeature/SettingView.swift
+@@ -27,6 +27,11 @@ public struct SettingView: View {
+                 }
+                 .padding(.vertical, 40).padding(.horizontal)
+             }
++            .toolbar {
++                ToolbarItem(placement: .topBarTrailing) {
++                    NavigationLink("扩展工具") { SXJToolboxView() }
++                }
++            }
+             .navigationTitle(.RLocalizable.setting)
+         } destination: { pathStore in
+             destination(pathStore)
+diff --git a/AppPackage/Tests/AppModelsTests/SXJBlockRuleTests.swift b/AppPackage/Tests/AppModelsTests/SXJBlockRuleTests.swift
+new file mode 100644
+index 0000000..db5e39b
+--- /dev/null
++++ b/AppPackage/Tests/AppModelsTests/SXJBlockRuleTests.swift
+@@ -0,0 +1,36 @@
++import AppModels
++import Foundation
++import Testing
++
++struct SXJBlockRuleTests {
++    private var gallery: Gallery {
++        Gallery(
++            gid: "1", token: "token", title: "A sample title", rating: 0,
++            tags: [.init(rawNamespace: "language", contents: [
++                .init(rawNamespace: "language", text: "english", isVotedUp: false, isVotedDown: false)
++            ])],
++            category: .manga, uploader: "Example", pageCount: 1, postedDate: Date(),
++            coverURL: nil, galleryURL: nil
++        )
++    }
++
++    @Test func titleMatchesCaseInsensitiveSubstring() {
++        #expect(SXJBlockRule(kind: .title, value: "SAMPLE").matches(gallery))
++    }
++
++    @Test func uploaderUsesExactMatch() {
++        #expect(SXJBlockRule(kind: .uploader, value: "example").matches(gallery))
++        #expect(!SXJBlockRule(kind: .uploader, value: "exam").matches(gallery))
++    }
++
++    @Test func tagNamespacePreventsCrossNamespaceMatch() {
++        #expect(SXJBlockRule(kind: .tag, value: "language:english").matches(gallery))
++        #expect(!SXJBlockRule(kind: .tag, value: "artist:english").matches(gallery))
++        #expect(SXJBlockRule(kind: .namespace, value: "language").matches(gallery))
++    }
++
++    @Test func blankAndDisabledRulesDoNotHideContent() {
++        #expect(!SXJBlockRule(kind: .title, value: "   ").matches(gallery))
++        #expect(!SXJBlockRule(kind: .uploader, value: "Example", isEnabled: false).matches(gallery))
++    }
++}
+diff --git a/AppPackage/Tests/NetworkingFeatureTests/SXJNetworkSettingsTests.swift b/AppPackage/Tests/NetworkingFeatureTests/SXJNetworkSettingsTests.swift
+new file mode 100644
+index 0000000..21a55c1
+--- /dev/null
++++ b/AppPackage/Tests/NetworkingFeatureTests/SXJNetworkSettingsTests.swift
+@@ -0,0 +1,36 @@
++import Foundation
++import NetworkingFeature
++import Testing
++
++struct SXJNetworkSettingsTests {
++    @Test func parsesMultipleDomainsAndComments() throws {
++        let hosts = try SXJNetworkSettings.parseHosts("127.0.0.1 example.org second.org # note\n::1 ipv6.example.org")
++        #expect(hosts["example.org"] == "127.0.0.1")
++        #expect(hosts["second.org"] == "127.0.0.1")
++        #expect(hosts["ipv6.example.org"] == "::1")
++    }
++
++    @Test func rejectsHostURLsAndInvalidAddresses() {
++        #expect(throws: SXJNetworkSettings.ConfigurationError.self) {
++            try SXJNetworkSettings.parseHosts("not-an-ip example.org")
++        }
++        #expect(throws: SXJNetworkSettings.ConfigurationError.self) {
++            try SXJNetworkSettings.parseHosts("127.0.0.1 https://example.org")
++        }
++    }
++
++    @Test func rejectsPlaintextDOH() {
++        #expect(throws: SXJNetworkSettings.ConfigurationError.self) {
++            try SXJNetworkSettings.validateDOH("http://example.org/dns-query")
++        }
++    }
++
++    @Test func requiresExplicitValidProxyPort() {
++        #expect(throws: SXJNetworkSettings.ConfigurationError.self) {
++            try SXJNetworkSettings.proxyConfiguration("http://example.org")
++        }
++        #expect(throws: SXJNetworkSettings.ConfigurationError.self) {
++            try SXJNetworkSettings.proxyConfiguration("socks5://example.org:99999")
++        }
++    }
++}
+diff --git a/AppPackage/Tests/SettingFeatureTests/SXJBackupTests.swift b/AppPackage/Tests/SettingFeatureTests/SXJBackupTests.swift
+new file mode 100644
+index 0000000..219d053
+--- /dev/null
++++ b/AppPackage/Tests/SettingFeatureTests/SXJBackupTests.swift
+@@ -0,0 +1,44 @@
++import AppModels
++import Foundation
++import Testing
++@testable import SettingFeature
++
++struct SXJBackupTests {
++    private func backup() -> SXJBackup {
++        SXJBackup(
++            setting: Setting(), searchFilter: Filter(), globalFilter: Filter(), watchedFilter: Filter(),
++            historyKeywords: ["sample"], quickSearchWords: [.init(name: "Sample", content: "language:english")],
++            galleryHistory: [.init(gid: "123", token: "token", lastOpenDate: Date(), readingProgress: 5)],
++            blockRules: [.init(kind: .uploader, value: "Example")], localFavorites: nil
++        )
++    }
++
++    @Test func roundTripPreservesSearchHistoryAndProgress() throws {
++        let restored = try SXJBackup.decode(backup().encoded())
++        #expect(restored.historyKeywords == ["sample"])
++        #expect(restored.galleryHistory.first?.readingProgress == 5)
++        #expect(restored.blockRules.first?.value == "Example")
++        #expect(restored.quickSearchWords.first?.content == "language:english")
++    }
++
++    @Test func rejectsFutureVersionBeforeRestore() throws {
++        var source = backup()
++        source.version = 999
++        let data = try source.encoded()
++        #expect(throws: SXJBackup.BackupError.self) { try SXJBackup.decode(data) }
++    }
++
++    @Test func rejectsDuplicateBlockIdentifiers() throws {
++        var source = backup()
++        if let first = source.blockRules.first { source.blockRules.append(first) }
++        let data = try source.encoded()
++        #expect(throws: SXJBackup.BackupError.self) { try SXJBackup.decode(data) }
++    }
++
++    @Test func excludesCredentialsFromExport() throws {
++        let data = try backup().encoded()
++        let text = String(decoding: data, as: UTF8.self)
++        #expect(!text.contains("ipb_pass_hash"))
++        #expect(!text.contains("ipb_member_id"))
++    }
++}
+diff --git a/EhPanda.xcodeproj/project.pbxproj b/EhPanda.xcodeproj/project.pbxproj
+index ecd6c69..af3eaa6 100644
+--- a/EhPanda.xcodeproj/project.pbxproj
++++ b/EhPanda.xcodeproj/project.pbxproj
+@@ -320,7 +320,7 @@
+ 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
+ 				CODE_SIGN_IDENTITY = "Apple Development";
+ 				CODE_SIGN_STYLE = Automatic;
+-				CURRENT_PROJECT_VERSION = 158;
++				CURRENT_PROJECT_VERSION = 1;
+ 				GENERATE_INFOPLIST_FILE = YES;
+ 				INFOPLIST_FILE = ShareExtension/Info.plist;
+ 				INFOPLIST_KEY_CFBundleDisplayName = ShareExtension;
+@@ -331,8 +331,8 @@
+ 					"@executable_path/Frameworks",
+ 					"@executable_path/../../Frameworks",
+ 				);
+-				MARKETING_VERSION = 3.0.0;
+-				PRODUCT_BUNDLE_IDENTIFIER = app.ehpanda.shareExtension;
++				MARKETING_VERSION = 0.1.0;
++				PRODUCT_BUNDLE_IDENTIFIER = org.ehviewer.sxj.ios.shareExtension;
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				PROVISIONING_PROFILE_SPECIFIER = "";
+ 				SKIP_INSTALL = YES;
+@@ -350,7 +350,7 @@
+ 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
+ 				CODE_SIGN_IDENTITY = "Apple Development";
+ 				CODE_SIGN_STYLE = Automatic;
+-				CURRENT_PROJECT_VERSION = 158;
++				CURRENT_PROJECT_VERSION = 1;
+ 				GENERATE_INFOPLIST_FILE = YES;
+ 				INFOPLIST_FILE = ShareExtension/Info.plist;
+ 				INFOPLIST_KEY_CFBundleDisplayName = ShareExtension;
+@@ -361,8 +361,8 @@
+ 					"@executable_path/Frameworks",
+ 					"@executable_path/../../Frameworks",
+ 				);
+-				MARKETING_VERSION = 3.0.0;
+-				PRODUCT_BUNDLE_IDENTIFIER = app.ehpanda.shareExtension;
++				MARKETING_VERSION = 0.1.0;
++				PRODUCT_BUNDLE_IDENTIFIER = org.ehviewer.sxj.ios.shareExtension;
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				PROVISIONING_PROFILE_SPECIFIER = "";
+ 				SKIP_INSTALL = YES;
+@@ -510,7 +510,7 @@
+ 				CODE_SIGN_ENTITLEMENTS = App/EhPanda.entitlements;
+ 				CODE_SIGN_IDENTITY = "Apple Development";
+ 				CODE_SIGN_STYLE = Automatic;
+-				CURRENT_PROJECT_VERSION = 158;
++				CURRENT_PROJECT_VERSION = 1;
+ 				DEVELOPMENT_ASSET_PATHS = "";
+ 				ENABLE_PREVIEWS = YES;
+ 				INFOPLIST_FILE = App/Info.plist;
+@@ -519,9 +519,9 @@
+ 					"$(inherited)",
+ 					"@executable_path/Frameworks",
+ 				);
+-				MARKETING_VERSION = 3.0.0;
++				MARKETING_VERSION = 0.1.0;
+ 				OTHER_LDFLAGS = "";
+-				PRODUCT_BUNDLE_IDENTIFIER = app.ehpanda;
++				PRODUCT_BUNDLE_IDENTIFIER = org.ehviewer.sxj.ios;
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				PROVISIONING_PROFILE_SPECIFIER = "";
+ 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+@@ -540,7 +540,7 @@
+ 				CODE_SIGN_ENTITLEMENTS = App/EhPanda.entitlements;
+ 				CODE_SIGN_IDENTITY = "Apple Development";
+ 				CODE_SIGN_STYLE = Automatic;
+-				CURRENT_PROJECT_VERSION = 158;
++				CURRENT_PROJECT_VERSION = 1;
+ 				DEVELOPMENT_ASSET_PATHS = "";
+ 				ENABLE_PREVIEWS = YES;
+ 				INFOPLIST_FILE = App/Info.plist;
+@@ -549,9 +549,9 @@
+ 					"$(inherited)",
+ 					"@executable_path/Frameworks",
+ 				);
+-				MARKETING_VERSION = 3.0.0;
++				MARKETING_VERSION = 0.1.0;
+ 				OTHER_LDFLAGS = "";
+-				PRODUCT_BUNDLE_IDENTIFIER = app.ehpanda;
++				PRODUCT_BUNDLE_IDENTIFIER = org.ehviewer.sxj.ios;
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				PROVISIONING_PROFILE_SPECIFIER = "";
+ 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+diff --git a/README.md b/README.md
+index cf217f3..6c13d75 100644
+--- a/README.md
++++ b/README.md
+@@ -1,36 +1,53 @@
+-<h1 align="center">EhPanda</h1>
+-
+-<h4 align="center">An unofficial E-Hentai App for iOS.</h4>
+-
+-<p align="center">
+-<img src="https://user-images.githubusercontent.com/31207151/105609404-0acbff00-5de4-11eb-9e88-f3c6e0ba9d44.png" width="400"></img>
+-</p>
+-
+-<p align="center">
+-  <a href="/README.md">English</a>・
+-  <a href="/READMEs/README.de.md">Deutsch</a>・
+-  <a href="/READMEs/README.ko.md">한국어</a>・
+-  <a href="/READMEs/README.jpn.md">日本語</a>・
+-  <a href="/READMEs/README.cht.md">繁體中文</a>・
+-  <a href="/READMEs/README.chs.md">简体中文</a>
+-</p>
+-
+-## Installation
+-1. Get the ipa file from [Releases](https://github.com/EhPanda-Team/EhPanda/releases).
+-2. Use some software like [AltStore](https://altstore.io) to install the ipa file on your device.
+-
+-## System Requirements
+-This app requires iOS / iPadOS 26.0 or later.
+-
+-## Content & Copyright
+-The content in this application is derived from E-Hentai, which is user-generated content.
+-
+-**Users of this application should access the E-Hentai content at their own risk.**
+-
+-## Questions & Feedback
+-[![Twitter](https://img.shields.io/badge/Twitter-2CA5E0?style=for-the-badge&logo=twitter&logoColor=white)](https://twitter.com/ehpandaapp)
+-[![Discord](https://img.shields.io/badge/Discord-7289DA?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/BSBE9FCBTq)
+-[![Telegram](https://img.shields.io/badge/Telegram-858585?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/ehpanda)
+-
+-## Screenshots
+-https://ehpanda.app
++# EhViewer SXJ iOS
++
++为 iPhone 使用场景适配的原生 Swift 客户端，以 EhPanda 的原生实现为基础，对照 Ehviewer_CN_SXJ 的 Android 功能继续适配。输出未签名 IPA，由使用者自行签名安装。
++
++**本项目尚未宣称与原 APK 全功能等价。** 已包含的模块、平台差异和待补齐项记录在 [功能对照](docs/FEATURE-PARITY.md)。构建成功也不能代替 iPhone 真机验收。
++
++## 构建 IPA
++
++1. 打开本仓库的 **Actions**。
++2. 选择 **Build unsigned iOS IPA**。
++3. 点击 **Run workflow**，分支选 main。
++4. 等待所有步骤通过，在该次运行底部 **Artifacts** 下载 EhViewer-SXJ-iOS-unsigned。
++5. 解压 Artifact ZIP，得到 EhViewer-SXJ-iOS-unsigned.ipa、SHA-256 文件和 build-info.json。
++6. 核对哈希后使用自己的签名工具签名安装。
++
++推送 main 或 v 开头的标签也会触发构建。无需 Apple Developer 证书、描述文件或签名 Secrets。Artifacts 保存 14 天，过期后可以重新运行。
++
++- 构建环境：GitHub macos-26，Xcode 26.6，Swift 6.3.1。
++- 目标：真机 arm64，iOS 26.0 及以上；包含分享扩展。
++- 工作流先跑完整模拟器测试计划，再 archive 和打包。测试失败不会输出“成功”的 IPA。
++- 输出校验会拒绝模拟器包、残留签名、描述文件、扩展 ID 不匹配和不可执行的主程序。
++- 构建日志及 xcresult 保存在独立 diagnostics Artifact，保存 7 天。
++
++## 使用入口
++
++- 首页：最新、热门、排行、订阅更新和历史。
++- 搜索：高级筛选、标签搜索、快速搜索和图片搜索。
++- 详情：标签、评分、评论、预览、归档、种子和下载。
++- 下载：队列、暂停/恢复、失败重试、文件夹和离线阅读。
++- 设置：登录、站点、外观、阅读、下载与隐私。
++- 设置右上角 **扩展工具**：本地收藏、本地屏蔽、图片目录导入、备份恢复、Hosts/加密 DNS/代理以及站点标签订阅管理等页面。
++- 长按画廊：本地收藏、屏蔽上传者或标题。
++
++登录使用网页或 Cookie；所有请求直接从手机访问站点。构建过程不需要也不包含用户的站点账号。账号权限与站点网络可达性仍由站点和手机网络决定。
++
++## 本地开发
++
++在装有 Xcode 26.6 的 Mac 上打开 EhPanda.xcodeproj，scheme 选 EhPanda。源码逻辑位于 AppPackage/Sources，薄入口位于 App，分享扩展位于 ShareExtension。
++
++无需签名的归档命令：
++
++~~~bash
++bash Scripts/build-unsigned.sh
++~~~
++
++本地不依赖 Xcode 的检查：
++
++~~~bash
++python3 Scripts/verify-source.py
++python3 -m unittest discover -s Scripts/tests -p 'test_*.py'
++~~~
++
++来源、固定版本、许可和名称关系详见 [UPSTREAM.md](docs/UPSTREAM.md)。完整真机验收步骤见 [DEVICE-ACCEPTANCE.md](docs/DEVICE-ACCEPTANCE.md)。
+diff --git a/Scripts/build-unsigned.sh b/Scripts/build-unsigned.sh
+new file mode 100644
+index 0000000..de09b71
+--- /dev/null
++++ b/Scripts/build-unsigned.sh
+@@ -0,0 +1,24 @@
++#!/bin/bash
++set -euo pipefail
++ROOT="$(cd "$(dirname "$0")/.." && pwd)"
++BUILD_ROOT="${BUILD_ROOT:-$ROOT/build}"
++mkdir -p "$BUILD_ROOT/logs" "$BUILD_ROOT/artifacts"
++cd "$ROOT"
++python3 Scripts/verify-source.py
++xcodebuild archive \
++  -project EhPanda.xcodeproj -scheme EhPanda -configuration Release \
++  -destination 'generic/platform=iOS' \
++  -archivePath "$BUILD_ROOT/EhViewer-SXJ.xcarchive" \
++  -derivedDataPath "$BUILD_ROOT/DerivedData" \
++  -clonedSourcePackagesDirPath "$BUILD_ROOT/SourcePackages" \
++  -onlyUsePackageVersionsFromResolvedFile \
++  -skipMacroValidation -skipPackagePluginValidation \
++  -resultBundlePath "$BUILD_ROOT/Archive.xcresult" \
++  ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
++  CODE_SIGN_IDENTITY= CODE_SIGN_ENTITLEMENTS= \
++  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= \
++  CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER:-1}" \
++  2>&1 | tee "$BUILD_ROOT/logs/archive.log"
++bash Scripts/package-unsigned.sh \
++  "$BUILD_ROOT/EhViewer-SXJ.xcarchive/Products/Applications/EhPanda.app" \
++  "$BUILD_ROOT/artifacts/EhViewer-SXJ-iOS-unsigned.ipa"
+diff --git a/Scripts/clean-staged-app.py b/Scripts/clean-staged-app.py
+new file mode 100644
+index 0000000..dac4103
+--- /dev/null
++++ b/Scripts/clean-staged-app.py
+@@ -0,0 +1,15 @@
++"""Remove signing metadata from a temporary Payload copy only."""
++import pathlib
++import shutil
++import sys
++
++payload = pathlib.Path(sys.argv[1]).resolve(strict=True)
++if payload.name != 'Payload' or not payload.parent.name.startswith('ipa-stage.'):
++    raise SystemExit('Refusing to clean a non-staging directory')
++for path in sorted(payload.rglob('*'), key=lambda item: len(item.parts), reverse=True):
++    if path.is_symlink():
++        continue
++    if path.name == '_CodeSignature' and path.is_dir():
++        shutil.rmtree(path)
++    elif path.name == 'embedded.mobileprovision' and path.is_file():
++        path.unlink()
+diff --git a/Scripts/package-unsigned.sh b/Scripts/package-unsigned.sh
+new file mode 100644
+index 0000000..b59a7cf
+--- /dev/null
++++ b/Scripts/package-unsigned.sh
+@@ -0,0 +1,31 @@
++#!/bin/bash
++set -euo pipefail
++ROOT="$(cd "$(dirname "$0")/.." && pwd)"
++APP_PATH="${1:?Usage: package-unsigned.sh app-path output-ipa}"
++OUTPUT="${2:?Specify output IPA}"
++[[ -d "$APP_PATH" && -f "$APP_PATH/Info.plist" ]] || { echo 'Missing archived app' >&2; exit 1; }
++mkdir -p "$(dirname "$OUTPUT")"
++OUTPUT_DIR="$(cd "$(dirname "$OUTPUT")" && pwd)"
++OUTPUT="$OUTPUT_DIR/$(basename "$OUTPUT")"
++STAGING="$(mktemp -d "$OUTPUT_DIR/ipa-stage.XXXXXX")"
++trap 'rm -rf -- "$STAGING"' EXIT
++mkdir "$STAGING/Payload"
++ditto "$APP_PATH" "$STAGING/Payload/EhPanda.app"
++# Strip only the temporary copy, preserving the original archive.
++find "$STAGING/Payload" -depth -type d \( -name '*.app' -o -name '*.appex' -o -name '*.framework' \) -print0 |
++  while IFS= read -r -d '' bundle; do
++    if codesign -dv "$bundle" >/dev/null 2>&1; then
++      codesign --remove-signature "$bundle"
++    fi
++  done
++find "$STAGING/Payload" -type f -name '*.dylib' -print0 |
++  while IFS= read -r -d '' library; do
++    if codesign -dv "$library" >/dev/null 2>&1; then
++      codesign --remove-signature "$library"
++    fi
++  done
++python3 "$ROOT/Scripts/clean-staged-app.py" "$STAGING/Payload"
++(cd "$STAGING" && /usr/bin/zip -q -r -y "$STAGING/output.ipa" Payload)
++mv "$STAGING/output.ipa" "$OUTPUT"
++python3 "$ROOT/Scripts/verify-ipa.py" "$OUTPUT"
++python3 "$ROOT/Scripts/write-build-info.py" "$OUTPUT"
+diff --git a/Scripts/test-ios.sh b/Scripts/test-ios.sh
+new file mode 100644
+index 0000000..d597e0c
+--- /dev/null
++++ b/Scripts/test-ios.sh
+@@ -0,0 +1,26 @@
++#!/bin/bash
++set -euo pipefail
++ROOT="$(cd "$(dirname "$0")/.." && pwd)"
++BUILD_ROOT="${BUILD_ROOT:-$ROOT/build}"
++mkdir -p "$BUILD_ROOT/logs"
++cd "$ROOT"
++DEVICE_ID="$(xcrun simctl list devices available --json | python3 -c '
++import json, sys
++obj = json.load(sys.stdin)
++phones = [device for runtime, devices in obj["devices"].items() if "iOS" in runtime
++          for device in devices if device.get("isAvailable") and "iPhone" in device["name"]]
++if not phones:
++    sys.exit("No available iPhone simulator on runner")
++print(phones[0]["udid"])
++')"
++xcodebuild test \
++  -project EhPanda.xcodeproj -scheme EhPanda \
++  -testPlan FeatureTests \
++  -destination "platform=iOS Simulator,id=$DEVICE_ID" \
++  -derivedDataPath "$BUILD_ROOT/DerivedData" \
++  -clonedSourcePackagesDirPath "$BUILD_ROOT/SourcePackages" \
++  -onlyUsePackageVersionsFromResolvedFile \
++  -skipMacroValidation -skipPackagePluginValidation \
++  -resultBundlePath "$BUILD_ROOT/Tests.xcresult" \
++  CODE_SIGNING_ALLOWED=NO \
++  2>&1 | tee "$BUILD_ROOT/logs/tests.log"
+diff --git a/Scripts/tests/test_verify_ipa.py b/Scripts/tests/test_verify_ipa.py
+new file mode 100644
+index 0000000..6ff5236
+--- /dev/null
++++ b/Scripts/tests/test_verify_ipa.py
+@@ -0,0 +1,95 @@
++import importlib.util
++import pathlib
++import plistlib
++import struct
++import tempfile
++import unittest
++import zipfile
++
++MODULE = pathlib.Path(__file__).resolve().parents[1] / 'verify-ipa.py'
++spec = importlib.util.spec_from_file_location('verify_ipa', MODULE)
++verify = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(verify)
++
++
++def binary(platform=2, signed=False):
++    commands = struct.pack('<6I', 0x32, 24, platform, 0x1A0000, 0x1A0500, 0)
++    if signed:
++        commands += struct.pack('<4I', 0x1D, 16, 80, 32)
++    return struct.pack('<8I', 0xFEEDFACF, 0x100000C, 0, 2, 2 if signed else 1, len(commands), 0, 0) + commands
++
++
++class IPAValidationTests(unittest.TestCase):
++    def make_ipa(self, entries=None, platform=2, signed=False, extension_id=None, executable_mode=0o100755):
++        temporary = tempfile.TemporaryDirectory()
++        self.addCleanup(temporary.cleanup)
++        output = pathlib.Path(temporary.name) / 'test.ipa'
++        main = 'Payload/Test.app/'
++        info = {
++            'CFBundleIdentifier': 'org.example.test', 'CFBundleExecutable': 'Test',
++            'CFBundleShortVersionString': '0.1', 'MinimumOSVersion': '26.0',
++            'CFBundleSupportedPlatforms': ['iPhoneOS']
++        }
++        records = {main + 'Info.plist': plistlib.dumps(info), main + 'Test': binary(platform, signed)}
++        if extension_id:
++            extension = main + 'PlugIns/Share.appex/'
++            records[extension + 'Info.plist'] = plistlib.dumps({**info, 'CFBundleIdentifier': extension_id})
++            records[extension + 'Test'] = binary()
++        records.update(entries or {})
++        with zipfile.ZipFile(output, 'w') as archive:
++            for name, data in records.items():
++                member = zipfile.ZipInfo(name)
++                member.create_system = 3
++                member.external_attr = (executable_mode if name.endswith('/Test') else 0o100644) << 16
++                archive.writestr(member, data)
++        return output
++
++    def test_accepts_unsigned_arm64_device_bundle(self):
++        result = verify.validate(self.make_ipa(extension_id='org.example.test.share'))
++        self.assertEqual(result['app'], 'org.example.test')
++        self.assertEqual(len(result['bundles']), 2)
++
++    def test_rejects_simulator(self):
++        with self.assertRaisesRegex(ValueError, 'device platform'):
++            verify.validate(self.make_ipa(platform=7))
++
++    def test_rejects_code_signature(self):
++        with self.assertRaisesRegex(ValueError, 'code signature'):
++            verify.validate(self.make_ipa(signed=True))
++
++    def test_rejects_embedded_profile(self):
++        with self.assertRaisesRegex(ValueError, 'Signing metadata'):
++            verify.validate(self.make_ipa({'Payload/Test.app/embedded.mobileprovision': b'profile'}))
++
++    def test_rejects_signature_directory(self):
++        with self.assertRaisesRegex(ValueError, 'Signing metadata'):
++            verify.validate(self.make_ipa({'Payload/Test.app/_CodeSignature/CodeResources': b'signature'}))
++
++    def test_rejects_extension_id_mismatch(self):
++        with self.assertRaisesRegex(ValueError, 'Extension Bundle ID'):
++            verify.validate(self.make_ipa(extension_id='org.other.share'))
++
++    def test_rejects_non_executable_app(self):
++        with self.assertRaisesRegex(ValueError, 'permission'):
++            verify.validate(self.make_ipa(executable_mode=0o100644))
++
++    def test_rejects_zip_path_traversal(self):
++        with self.assertRaisesRegex(ValueError, 'Unsafe IPA member'):
++            verify.validate(self.make_ipa({'Payload/../../outside': b'bad'}))
++
++    def test_rejects_x86_binary(self):
++        with self.assertRaisesRegex(ValueError, 'arm64'):
++            verify.macho_info(struct.pack('<8I', 0xFEEDFACF, 0x1000007, 0, 2, 0, 0, 0, 0))
++
++    def test_rejects_corrupt_load_command(self):
++        with self.assertRaisesRegex(ValueError, 'load-command'):
++            verify.macho_info(struct.pack('<8I', 0xFEEDFACF, 0x100000C, 0, 2, 1, 8, 0, 0)
++                              + struct.pack('<2I', 0x32, 4))
++
++    def test_rejects_signed_embedded_library(self):
++        with self.assertRaisesRegex(ValueError, 'code signature'):
++            verify.validate(self.make_ipa({'Payload/Test.app/Frameworks/Bad.dylib': binary(signed=True)}))
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/Scripts/verify-ipa.py b/Scripts/verify-ipa.py
+new file mode 100644
+index 0000000..9e504b5
+--- /dev/null
++++ b/Scripts/verify-ipa.py
+@@ -0,0 +1,96 @@
++"""Validate a real-device, unsigned iOS IPA without requiring macOS."""
++import json
++import pathlib
++import plistlib
++import stat
++import struct
++import sys
++import zipfile
++
++ARM64 = 0x0100000C
++MACHO64 = 0xFEEDFACF
++LC_CODE_SIGNATURE = 0x1D
++LC_BUILD_VERSION = 0x32
++
++
++def macho_info(data):
++    if len(data) < 32:
++        raise ValueError('Truncated Mach-O header')
++    magic, cpu, subtype, filetype, commands, size, flags, reserved = struct.unpack_from('<8I', data)
++    if magic != MACHO64 or cpu != ARM64:
++        raise ValueError('Expected a thin arm64 Mach-O for a physical iPhone')
++    offset = 32
++    platform = None
++    for _ in range(commands):
++        if offset + 8 > len(data):
++            raise ValueError('Truncated Mach-O load command')
++        command, length = struct.unpack_from('<II', data, offset)
++        if length < 8 or offset + length > len(data):
++            raise ValueError('Invalid Mach-O load-command size')
++        if command == LC_CODE_SIGNATURE:
++            if length < 16:
++                raise ValueError('Truncated code-signature command')
++            _, signature_size = struct.unpack_from('<II', data, offset + 8)
++            if signature_size:
++                raise ValueError('IPA still contains a code signature')
++        if command == LC_BUILD_VERSION:
++            if length < 24:
++                raise ValueError('Truncated build-version command')
++            platform = struct.unpack_from('<I', data, offset + 8)[0]
++        offset += length
++    if platform != 2:
++        raise ValueError('Expected iOS device platform; simulator binaries are not installable')
++    return {'architecture': 'arm64', 'platform': 'iOS', 'unsigned': True}
++
++
++def validate(path):
++    with zipfile.ZipFile(path) as archive:
++        names = archive.namelist()
++        if len(names) != len(set(names)):
++            raise ValueError('Duplicate ZIP members')
++        for name in names:
++            parts = pathlib.PurePosixPath(name).parts
++            if not parts or parts[0] != 'Payload' or '..' in parts or name.startswith('/'):
++                raise ValueError('Unsafe IPA member: ' + name)
++            if '_CodeSignature' in parts or parts[-1] == 'embedded.mobileprovision':
++                raise ValueError('Signing metadata found in IPA')
++        apps = [name for name in names if name.count('/') == 2 and name.endswith('.app/Info.plist')]
++        if len(apps) != 1:
++            raise ValueError('IPA must contain exactly one main app')
++        main_path = apps[0].rsplit('/', 1)[0]
++        main = plistlib.loads(archive.read(apps[0]))
++        main_id = main['CFBundleIdentifier']
++        if main.get('CFBundleSupportedPlatforms') != ['iPhoneOS']:
++            raise ValueError('Main app is not an iPhoneOS build')
++        bundles = [name for name in names if name.endswith('/Info.plist')
++                   and (name.rsplit('/', 1)[0].endswith('.app')
++                        or name.rsplit('/', 1)[0].endswith('.appex'))]
++        inspected = []
++        for plist_path in bundles:
++            bundle = plistlib.loads(archive.read(plist_path))
++            prefix = plist_path.rsplit('/', 1)[0]
++            bundle_id = bundle['CFBundleIdentifier']
++            if prefix != main_path and not bundle_id.startswith(main_id + '.'):
++                raise ValueError('Extension Bundle ID is not prefixed by the main app ID')
++            executable = prefix + '/' + bundle['CFBundleExecutable']
++            mode = archive.getinfo(executable).external_attr >> 16
++            if not mode & stat.S_IXUSR:
++                raise ValueError('Executable permission missing: ' + executable)
++            inspected.append({'bundle_id': bundle_id, **macho_info(archive.read(executable))})
++        # Check embedded frameworks and dynamic libraries as well as app executables.
++        for member in archive.infolist():
++            if member.is_dir() or member.file_size < 4:
++                continue
++            with archive.open(member) as stream:
++                magic = stream.read(4)
++            if magic == struct.pack('<I', MACHO64):
++                macho_info(archive.read(member))
++        return {'app': main_id, 'version': main['CFBundleShortVersionString'],
++                'minimum_ios': main['MinimumOSVersion'], 'bundles': inspected}
++
++
++if __name__ == '__main__':
++    try:
++        print(json.dumps(validate(sys.argv[1]), ensure_ascii=False, indent=2))
++    except (ValueError, KeyError, zipfile.BadZipFile, OSError, plistlib.InvalidFileException) as error:
++        raise SystemExit('IPA validation failed: ' + str(error)) from error
+diff --git a/Scripts/verify-source.py b/Scripts/verify-source.py
+new file mode 100644
+index 0000000..1c00391
+--- /dev/null
++++ b/Scripts/verify-source.py
+@@ -0,0 +1,39 @@
++"""Fast source/configuration checks; this is not an Xcode build."""
++import json
++import pathlib
++import plistlib
++import re
++import xml.etree.ElementTree as ET
++
++root = pathlib.Path(__file__).resolve().parents[1]
++count = 0
++for path in root.rglob('*'):
++    if any(part in {'.git', 'build', '.tools', '.reference', '.planning'} for part in path.relative_to(root).parts):
++        continue
++    if path.suffix in {'.json', '.xcstrings', '.xctestplan', '.resolved'}:
++        json.loads(path.read_text(encoding='utf-8-sig'))
++        count += 1
++    elif path.suffix in {'.plist', '.entitlements'}:
++        plistlib.loads(path.read_bytes())
++        count += 1
++    elif path.suffix in {'.xcscheme', '.xcworkspacedata'}:
++        ET.fromstring(path.read_bytes())
++        count += 1
++info = plistlib.loads((root / 'App/Info.plist').read_bytes())
++project = (root / 'EhPanda.xcodeproj/project.pbxproj').read_text(encoding='utf-8')
++assert 'org.ehviewer.sxj.ios.shareExtension' in project
++assert 'PRODUCT_BUNDLE_IDENTIFIER = org.ehviewer.sxj.ios;' in project
++assert 'org.ehviewer.sxj.ios.downloads.processing' in info['BGTaskSchedulerPermittedIdentifiers']
++assert 'processing' in info['UIBackgroundModes']
++assert info['UIFileSharingEnabled'] is True
++assert info['CFBundleDisplayName'] == 'EhViewer SXJ'
++assert 'app.ehpanda.downloads.processing' not in (root / 'AppPackage/Sources/BackgroundProcessingClient/BackgroundProcessingClient.swift').read_text()
++workflow = (root / '.github/workflows/ios-unsigned.yml').read_text()
++assert 'runs-on: macos-26' in workflow
++assert 'secrets.' not in workflow
++assert re.search(r'contents:\s*read', workflow)
++for name in ['build-unsigned.sh', 'package-unsigned.sh', 'test-ios.sh']:
++    assert b'\r' not in (root / 'Scripts' / name).read_bytes(), name + ' must use LF'
++for path in [root / 'AppPackage/Package.resolved', root / 'EhPanda.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved']:
++    assert path.is_file(), 'Missing dependency lock: ' + str(path)
++print('Source/configuration checks passed (' + str(count) + ' structured files). Xcode compilation still required.')
+diff --git a/Scripts/write-build-info.py b/Scripts/write-build-info.py
+new file mode 100644
+index 0000000..3b30725
+--- /dev/null
++++ b/Scripts/write-build-info.py
+@@ -0,0 +1,24 @@
++import datetime
++import hashlib
++import json
++import os
++import pathlib
++import subprocess
++import sys
++
++ipa = pathlib.Path(sys.argv[1]).resolve(strict=True)
++digest = hashlib.file_digest(ipa.open('rb'), 'sha256').hexdigest()
++ipa.with_suffix(ipa.suffix + '.sha256').write_text(digest + '  ' + ipa.name + '\n', encoding='utf-8')
++info = {
++    'file': ipa.name,
++    'sha256': digest,
++    'bytes': ipa.stat().st_size,
++    'commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
++    'build_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
++    'run_url': 'https://github.com/' + os.environ.get('GITHUB_REPOSITORY', '')
++               + '/actions/runs/' + os.environ.get('GITHUB_RUN_ID', ''),
++    'signing': 'unsigned; requires your own signing before installation',
++    'android_reference': 'b44aafcdb1fe0270da2d3f45924d6de4b37b2cc4',
++    'ios_base': '7a9051140db336c4a3ce0b883f005bacd8ce958f'
++}
++(ipa.parent / 'build-info.json').write_text(json.dumps(info, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+diff --git a/docs/DEVICE-ACCEPTANCE.md b/docs/DEVICE-ACCEPTANCE.md
+new file mode 100644
+index 0000000..8dcbdb3
+--- /dev/null
++++ b/docs/DEVICE-ACCEPTANCE.md
+@@ -0,0 +1,36 @@
++# iPhone 验收
++
++目标设备：iPhone 17 Pro Max / iOS 27.0。先从成功的 Actions 运行下载未签名 IPA，核对同批 SHA-256，再自行签名。解压 Artifact 的 ZIP 后才是实际 IPA。
++
++## 安装与账号
++
++- 安装与首次启动；桌面名称正确；分享扩展正常；签名工具为主程序和扩展使用匹配的 Bundle ID 前缀。
++- 网页登录后原生列表保持登录；Cookie 登录可用；注销后网页不再残留前一个账号会话。
++- E-Hentai / ExHentai 切换按当前账号真实权限访问。
++- 切后台再回来时隐私模糊、Face ID 解锁和超时锁定正常。
++
++## 浏览与互动
++
++- 最新、热门、各排行、订阅更新、历史均能打开并分页。
++- 中文/日文标题、标签翻译、关键字、命名空间、高级筛选、图片搜索、快速搜索。
++- 详情、缩略图、评论、发评/编辑/投票、评分、收藏增删、收藏分类移动。
++- 长按列表画廊加入本地收藏；扩展工具能打开详情及子页面；移除后持久化。
++- 添加本地屏蔽规则：标题包含匹配，上传者与标签完整匹配；全部隐藏的页面可继续翻页。
++
++## 阅读与下载
++
++- 竖向、左右翻页、缩放、横屏、双页、自动翻页、跳页、预加载、动态图片、保存图片。
++- 中途退出、进后台及强制退出后，阅读进度恢复。
++- 下载、暂停、恢复、失败重试、移动文件夹、删除、校验和修复；只在 Wi-Fi 下载的限制。
++- 飞行模式打开已完成下载，全书翻阅，不应依赖网络获取页列表。
++- 从“文件”导入图片目录后，在下载的 Imported 文件夹中离线阅读；原始目录内容不变。
++- 系统调度和用户强制退出对后台任务的限制需单独记录，不能用模拟器结果替代。
++
++## 数据与网络
++
++- 导出备份到“文件”；修改设置后恢复；错误、超大或新版本备份应拒绝，不覆盖当前数据。
++- 备份不含 Cookie/密码；图片目录独立复制，不混同于 JSON 设置备份。
++- 使用自己的可用网络测试 Hosts、加密 DNS 和代理；启用代理后关闭 SNI 直连；关闭代理后恢复系统网络。
++- 应用 WebKit 页面与原生请求使用当前账号；站点标签管理、站点设置、账号配额和新闻可操作。
++
++每项记录：IPA SHA-256、设备系统版本、操作步骤、预期、实际、复现频率。构建成功不自动将上述项目标为通过。
+diff --git a/docs/FEATURE-PARITY.md b/docs/FEATURE-PARITY.md
+new file mode 100644
+index 0000000..dabcd66
+--- /dev/null
++++ b/docs/FEATURE-PARITY.md
+@@ -0,0 +1,83 @@
++# Android 功能对照与验收状态
++
++参照提交：b44aafcdb1fe0270da2d3f45924d6de4b37b2cc4。iOS 原生基础提交：7a9051140db336c4a3ce0b883f005bacd8ce958f。
++
++目标是原 APK 的完整使用能力，而不是只做网页外壳。下表的“原生”表示已有相应实现，“网页”表示经当前账号 Cookie 打开完整站点功能；都不代表真机已验收。未列明的细项也不能自动视为完成。
++
++| 原版功能 | 当前 iOS 实现 | 代码入口或差异 |
++|---|---|---|
++| E-Hentai / ExHentai 切换 | 原生 | AccountSetting、GalleryHost |
++| 用户名密码登录 | 原生 | LoginFeature 的 LoginReducer |
++| Cookie 登录、编辑 Cookie | 原生 | CookieClient、AccountSetting |
++| 网页登录、验证后同步 | 原生 | WebView；独立会话与当前原生 Cookie 同步 |
++| 注销 | 原生 | AccountSetting；新网页不沿用旧 WebKit 会话 |
++| 最新画廊、分页 | 原生 | HomeFeature/Frontpage |
++| 热门 | 原生 | HomeFeature/Popular |
++| 排行榜、分榜 | 原生 | HomeFeature/Toplists |
++| 订阅更新列表 | 原生 | HomeFeature/Watched |
++| 标签订阅、删除订阅、标签权重/屏蔽管理 | 网页 | 扩展工具 → 标签订阅与屏蔽，站点 mytags |
++| 新闻 | 网页 | 扩展工具 → 站点新闻 |
++| 站点设置、配置档 | 原生与网页 | EhSetting；扩展工具 uconfig.php |
++| 用户信息、积分、配额 | 原生与网页 | AccountSetting；扩展工具 home.php |
++| 关键字与标签搜索 | 原生 | SearchFeature |
++| 搜索历史 | 原生 | historyKeywords |
++| 高级分类、评分、页数等筛选 | 原生 | FiltersFeature |
++| 日期定位 | 原生 | DateSeekFeature |
++| 图片搜索 | 原生 | SearchFeature |
++| 快速搜索、排序、编辑 | 原生 | QuickSearchFeature |
++| 多标签搜索 | 原生 | 搜索语法、TagSuggestion |
++| 标签中文翻译、自定义词库 | 原生 | TagTranslationFeature、FileClient |
++| 日文标题、列表/缩略图显示 | 原生 | AppearanceSetting |
++| 详情、画廊信息、标签 | 原生 | DetailFeature |
++| 预览、缩略图分页 | 原生 | DetailFeature/Previews |
++| 评论查看、发送、编辑与投票 | 原生 | DetailFeature/Comments、PostComment |
++| 画廊评分 | 原生 | DetailFeature/Rating |
++| 标签投票 | 原生 | DetailFeature |
++| 云收藏、收藏分类、搜索和排序 | 原生 | FavoritesFeature |
++| 本地收藏 | 新增原生 | 长按画廊 / 扩展工具 → 本地收藏 |
++| 本地标题屏蔽 | 新增原生 | SXJBlockRule，包含匹配 |
++| 上传者黑名单 | 新增原生 | SXJBlockRule，完整匹配 |
++| 标签/命名空间屏蔽 | 新增原生 | SXJBlockRule；列表全被过滤时仍可翻页 |
++| 浏览历史、阅读进度 | 原生 | GalleryHistoryEntry |
++| 竖向、左翻、右翻 | 原生 | ReadingFeature |
++| 缩放、双击、横屏、双页 | 原生 | ReadingFeature、ReadingSettingFeature |
++| 自动翻页、跳页、预加载 | 原生 | ReadingFeature |
++| 静态、GIF、WebP 等图片 | 原生 | ImageClient、AnimatedImageFeature |
++| 原图保存、分享、复制链接 | 原生 | ReadingFeature、DetailFeature |
++| 种子列表/种子链接 | 原生 | DetailFeature/Torrents；下载后由兼容客户端处理 |
++| 在线归档请求/归档链接 | 原生 | DetailFeature/Archives；需要站点权限 |
++| 下载队列、暂停/恢复 | 原生 | DownloadClient、DownloadsFeature |
++| 失败重试、单页修复、校验 | 原生 | DownloadInspector、DownloadStore |
++| 下载文件夹、移动、排序和搜索 | 原生 | DownloadsFeature |
++| 下载页分类及标签搜索细项 | 待逐项对齐 | 已有本地搜索，不将全部 Android 搜索选项算作已实现 |
++| 下载并发、蜂窝网络限制 | 原生 | DownloadSetting |
++| 离线阅读 | 原生 | 本地 manifest 与图片，不依赖在线页列表 |
++| 重新扫描/恢复已下载目录 | 原生 | DownloadStore.reconcileDownloads / refreshDownloads |
++| 读取时捕获缓存到下载库 | 原生 | captureCachedPage；与 Android 的“自动整本同步下载”需分项验收 |
++| 图片目录/相册整理后导入 | 新增原生 | 扩展工具 → 本地画廊导入；从“文件”选择目录 |
++| 直接导入 ZIP/7z/RAR | 尚未实现 | 当前必须先解压后选择图片目录 |
++| Android 数据库备份直接导入 | 尚未实现 | 当前支持本工程 JSON 备份，格式不兼容 Android SQLite |
++| Android Wi-Fi 二进制迁移协议互通 | 尚未实现 | 可先通过系统“文件”/隔空投送迁移目录，不宣称原协议兼容 |
++| 设置/历史/快速搜索/本地收藏备份恢复 | 新增原生 | SXJBackup；校验后确认恢复，凭据不导出 |
++| 清理图片缓存、日志查看 | 原生 | GeneralSetting、AppActivityLogs |
++| 崩溃日志与 Android logcat | 平台适配 | 使用 iOS 系统日志与应用日志；没有 Android logcat |
++| 内置 Hosts、SNI 直连 | 原生 | DomainResolver、DFClient |
++| 自定义 Hosts | 新增原生 | SXJNetworkSettings；用于 SNI 直连模式 |
++| DNS over HTTPS | 新增原生 | Network.framework PrivacyContext；系统策略优先 |
++| HTTP/HTTPS CONNECT / SOCKS5 代理 | 新增原生 | SXJNetworkSettings；目前不支持代理账号密码 |
++| 深色/浅色、主题、列表外观 | 原生 | AppearanceSetting |
++| 简繁中/日/英等语言 | 原生 | 上游多语言资源；新增扩展工具当前以简体中文为主 |
++| 屏幕保持、亮度/阅读显示细项 | 待逐项验收 | 使用 iOS 阅读器行为，尚未逐个复制 Android 的所有设置开关 |
++| 音量键翻页 | 平台差异 | 不使用私有 API 拦截系统音量键；原生触屏/手势翻页 |
++| 常驻后台服务 | 平台差异 | 后台 URLSession + 系统 BGProcessing，调度由 iOS 决定 |
++| 任意存储目录/Android 媒体扫描 | 平台适配 | 沙盒 Downloads、系统“文件”、security-scoped 导入 |
++| 图案锁、隐私保护 | 平台适配 | Face ID/系统认证、超时锁定、后台模糊；不复制 Android 图案锁界面 |
++| 阻止系统截图 | 平台差异 | 后台隐私模糊，不能等同 Android FLAG_SECURE 的截图阻止 |
++| Android 厂商后台优化/S Pen | 平台不适用 | iPhone 没有对应系统服务或硬件 |
++| 应用升级 | 平台适配 | Actions 重新构建 IPA，使用者自行签名覆盖安装 |
++
++## 未完成清单
++
++在直接压缩包导入、Android SQLite 迁移、Wi-Fi 协议互通、原版下载检索细项、阅读设置开关等差异闭环之前，本工程不能标注为“原 APK 全功能移植完成”。站点网页登录、防机器人验证、用户权限、真实下载和锁屏/后台行为必须由真实账号与 iPhone 验收。
++
++本地脚本校验不等于 Swift 编译。最新的 Actions 运行、产物 SHA-256 和 DEVICE-ACCEPTANCE.md 中的实测记录共同构成验收证据。
+diff --git a/docs/UPSTREAM.md b/docs/UPSTREAM.md
+new file mode 100644
+index 0000000..22cd8b9
+--- /dev/null
++++ b/docs/UPSTREAM.md
+@@ -0,0 +1,15 @@
++# 来源与版本
++
++本项目名为 EhViewer SXJ iOS，是独立的 iOS 适配工程，不是 Android 上游的官方 iOS 发布。
++
++- Android 功能参照：xiaojieonly/Ehviewer_CN_SXJ，分支 BiLi_PC_Gamer，固定提交 b44aafcdb1fe0270da2d3f45924d6de4b37b2cc4。
++- 原生 Swift 基础：EhPanda-Team/EhPanda，develop 分支，固定提交 7a9051140db336c4a3ce0b883f005bacd8ce958f。
++- 基础项目使用 MIT 许可；根目录 LICENSE 保留原文和作者署名。保留 Swift 文件的既有版权声明和原作者鸣谢。
++- Android 根 LICENSE 含混合许可文字；本工程不将其 Android 源码整包复制进 iOS target。引用其实现进行后续代码移植时，按具体文件核对许可并保留声明。
++- 独立主应用 Bundle ID：org.ehviewer.sxj.ios；分享扩展：org.ehviewer.sxj.ios.shareExtension。
++- Xcode target / scheme 继续使用 EhPanda，以保留上游完整工程、测试计划及包引用；手机桌面显示 EhViewer SXJ。
++- 当前适配对象：iPhone 17 Pro Max，iOS 27.0。最低运行版本 iOS 26.0。
++
++新增适配包含原生本地收藏、本地标题/上传者/标签/命名空间屏蔽、JSON 备份恢复、图片目录离线导入、网络配置、站点工具入口、网页登录 Cookie 同步修复和无证书的 IPA 构建校验。
++
++功能存在于源码、编译成功、模拟器测试通过、真机行为通过是不同的验收层级。请以 FEATURE-PARITY.md 和真实 Actions 结果为准，不把继承源代码等同于全部功能已验收。
