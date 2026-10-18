@@ -64,4 +64,34 @@ struct SXJFolderImporterTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: source.path).count == 2)
     }
 
+
+    @Test func androidFolderPreservesIdentityAndMissingPagesAndSkipsDuplicateImport() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("source")
+        let destination = root.appendingPathComponent("downloads")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        let encoded = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
+        let bytes = try #require(Data(base64Encoded: encoded))
+        for name in ["00000001.png", "00000003.png"] { try bytes.write(to: source.appendingPathComponent(name)) }
+        let header = "VERSION2\n00000000\n12345\nabcdef1234\n1\n1\n40\n3\n"
+        try Data(header.utf8).write(to: source.appendingPathComponent(".ehviewer"))
+        let importer = SXJFolderImporter(destinationRoot: destination)
+        #expect(try await importer.importFolder(source, host: .ehentai) == 1)
+        let folders = try FileManager.default.contentsOfDirectory(
+            at: destination.appendingPathComponent("Imported"), includingPropertiesForKeys: nil
+        )
+        let folder = try #require(folders.first)
+        let manifest = try JSONDecoder().decode(
+            DownloadManifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json"))
+        )
+        #expect(manifest.gid == "12345")
+        #expect(manifest.token == "abcdef1234")
+        #expect(manifest.pageCount == 3)
+        #expect(manifest.completedPageCount == 2)
+        #expect(manifest.pages[2] == "")
+        #expect(try await importer.importFolder(source, host: .ehentai) == 0)
+        #expect(try Data(contentsOf: source.appendingPathComponent("00000001.png")) == bytes)
+    }
+
 }

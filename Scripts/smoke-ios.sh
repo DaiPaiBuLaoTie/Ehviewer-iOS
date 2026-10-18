@@ -3,15 +3,22 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_ROOT="${BUILD_ROOT:-$ROOT/build}"
 mkdir -p "$BUILD_ROOT/screenshots" "$BUILD_ROOT/logs"
-DEVICE_ID="$(xcrun simctl list devices booted --json | python3 -c '
+DEVICE_ID="$(cat "$BUILD_ROOT/simulator-device-id")"
+STATE="$(xcrun simctl list devices available --json | python3 -c '
 import json, sys
-obj = json.load(sys.stdin)
-phones = [device for runtime, devices in obj["devices"].items() if "iOS" in runtime
-          for device in devices if device.get("isAvailable") and "iPhone" in device["name"]]
-if not phones:
-    sys.exit("No booted iPhone simulator after tests")
-print(phones[0]["udid"])
-')"
+identity = sys.argv[1]
+for devices in json.load(sys.stdin)["devices"].values():
+    for device in devices:
+        if device["udid"] == identity:
+            print(device["state"])
+            sys.exit(0)
+sys.exit("Test simulator is no longer available")
+' "$DEVICE_ID")"
+if [ "$STATE" != "Booted" ]; then
+  xcrun simctl boot "$DEVICE_ID"
+fi
+xcrun simctl bootstatus "$DEVICE_ID" -b
+
 APP="$BUILD_ROOT/DerivedData/Build/Products/Debug-iphonesimulator/EhPanda.app"
 BUNDLE_ID="org.ehviewer.sxj.ios"
 xcrun simctl install "$DEVICE_ID" "$APP"

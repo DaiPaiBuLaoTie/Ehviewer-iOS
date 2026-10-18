@@ -46,31 +46,40 @@ actor SXJFolderImporter {
         var imported = 0
         for (folder, files) in groups.sorted(by: { $0.key.path < $1.key.path }) {
             try Task.checkCancellation()
-            try importBook(folder: folder, images: files, host: host, manager: manager)
-            imported += 1
+            if try importBook(folder: folder, images: files, host: host, manager: manager) { imported += 1 }
         }
         return imported
     }
 
-    private func importBook(folder: URL, images: [URL], host: GalleryHost, manager: FileManager) throws {
+    private func importBook(folder: URL, images: [URL], host: GalleryHost, manager: FileManager) throws -> Bool {
         let storage = DownloadStore(rootURL: destinationRoot)
         try storage.ensureRootDirectory()
         let parent = storage.userFolderURL(name: "Imported")
         try manager.createDirectory(at: parent, withIntermediateDirectories: true)
-        let identity = "local-" + UUID().uuidString.lowercased()
-        let token = "local"
+        let android = try SXJAndroidDownloadHeader.read(folder: folder)
+        let identity = android?.gid ?? ("local-" + UUID().uuidString.lowercased())
+        let token = android?.token ?? "local"
+        guard storage.galleryFolderURLs(gid: identity, token: token).isEmpty else { return false }
         let name = storage.makeFolderRelativePath(gid: identity, token: token, title: folder.lastPathComponent)
         let destination = parent.appendingPathComponent(name, isDirectory: true)
         let staging = parent.appendingPathComponent(".import-" + UUID().uuidString, isDirectory: true)
         try manager.createDirectory(at: staging, withIntermediateDirectories: true)
         do {
-            var hashes: [Int: String] = [:]
+            let pageCount = android?.pageCount ?? images.count
+            var hashes = Dictionary(uniqueKeysWithValues: (1...pageCount).map { ($0, "") })
+            var importedIndices = Set<Int>()
             let sorted = images.sorted {
                 $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
             }
             for (offset, source) in sorted.enumerated() {
                 try Task.checkCancellation()
-                let index = offset + 1
+                let index: Int
+                if android != nil {
+                    guard let page = Int(source.deletingPathExtension().lastPathComponent),
+                          page > 0, page <= pageCount, importedIndices.insert(page).inserted
+                    else { throw ImportError.invalidAndroidPage }
+                    index = page
+                } else { index = offset + 1 }
                 let relative = storage.makePageRelativePath(
                     gid: identity, token: token, index: index, fileExtension: source.pathExtension.lowercased()
                 )
@@ -93,7 +102,7 @@ actor SXJFolderImporter {
                       CGImageSourceCreateThumbnailAtIndex(imageSource, 0, decodingOptions as CFDictionary) != nil
                 else { throw ImportError.invalidImage }
                 hashes[index] = try storage.fileHash(at: target)
-                if index == 1 {
+                if offset == 0 {
                     let cover = storage.makeCoverRelativePath(
                         gid: identity, token: token, fileExtension: source.pathExtension.lowercased()
                     )
@@ -107,6 +116,7 @@ actor SXJFolderImporter {
             )
             try storage.writeManifest(manifest, folderURL: staging)
             try manager.moveItem(at: staging, to: destination)
+            return true
         } catch {
             try? manager.removeItem(at: staging)
             throw error
@@ -117,11 +127,13 @@ actor SXJFolderImporter {
         case noImages
         case invalidImage
         case limitExceeded
+        case invalidAndroidPage
 
         var errorDescription: String? {
             switch self {
             case .noImages: return "所选目录没有支持的图片。请先解压压缩包，再选择图片目录。"
             case .invalidImage: return "目录中存在无法识别的图片，本画廊未写入下载库。"
+            case .invalidAndroidPage: return "Android 图片应使用原始数字页码文件名，页码重复或超出元数据范围。"
             case .limitExceeded: return "单次导入上限为 20,000 页、16 GB，单张图片最多 256 MB。请分批导入。"
             }
         }

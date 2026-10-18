@@ -37,6 +37,7 @@ struct SXJToolboxView: View {
                     .sheet(isPresented: $showingFavorites) { SXJLocalFavoritesView() }
                 NavigationLink("标题、上传者和标签屏蔽") { SXJBlockRulesView() }
                 NavigationLink("本地画廊导入") { SXJLocalImportView() }
+                NavigationLink("Android 数据库迁移") { SXJAndroidMigrationView() }
                 NavigationLink("网络与自定义 Hosts") { SXJNetworkView() }
             }
             Section("数据备份") {
