@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_ROOT="${BUILD_ROOT:-$ROOT/build}"
-mkdir -p "$BUILD_ROOT/screenshots" "$BUILD_ROOT/logs"
+mkdir -p "$BUILD_ROOT/logs"
 DEVICE_ID="$(cat "$BUILD_ROOT/simulator-device-id")"
 STATE="$(xcrun simctl list devices available --json | python3 -c '
 import json, sys
@@ -33,4 +33,3 @@ if not any(len(entry) >= 3 and entry[0].isdigit() and sys.argv[2] in entry[-1] f
     sys.exit("Application did not remain running after launch")
 print("Application remained running after launch")
 PY
-xcrun simctl io "$DEVICE_ID" screenshot "$BUILD_ROOT/screenshots/launch.png"

@@ -73,7 +73,6 @@ jobs:
           path: |
             build/logs/
             build/*.xcresult
-            build/screenshots/
             build/test-summary.json
           if-no-files-found: ignore
           retention-days: 7
