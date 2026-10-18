@@ -64,7 +64,6 @@ struct SXJFolderImporterTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: source.path).count == 2)
     }
 
-
     @Test func androidFolderPreservesIdentityAndMissingPagesAndSkipsDuplicateImport() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

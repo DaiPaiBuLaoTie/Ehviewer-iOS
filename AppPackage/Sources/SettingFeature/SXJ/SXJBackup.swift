@@ -17,7 +17,7 @@ struct SXJBackup: Codable {
     var galleryHistory: [GalleryHistoryEntry]
     var blockRules: [SXJBlockRule]
     var localFavorites: [Gallery]?
-    var readerOptions: SXJReaderOptions? = nil
+    var readerOptions: SXJReaderOptions?
 
     func encoded() throws -> Data {
         let encoder = JSONEncoder()

@@ -156,7 +156,7 @@ actor SXJAndroidBackupReader {
 
     private func gallery(_ row: [String: String], host: GalleryHost) throws -> Gallery {
         let identity = try self.identity(row)
-        let categories: [Int: Category] = [
+        let categories: [Int: AppModels.Category] = [
             1: .misc, 2: .doujinshi, 4: .manga, 8: .artistCG, 16: .gameCG,
             32: .imageSet, 64: .cosplay, 128: .asianPorn, 256: .nonH, 512: .western
         ]
