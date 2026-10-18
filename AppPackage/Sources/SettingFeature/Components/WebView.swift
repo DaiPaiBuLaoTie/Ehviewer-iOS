@@ -36,14 +36,10 @@ struct WebView: UIViewControllerRepresentable {
         }
 
         func webView(
-            _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-        ) {
-            guard let url = navigationAction.request.url else {
-                decisionHandler(.cancel)
-                return
-            }
-            decisionHandler(["https", "http", "about"].contains(url.scheme ?? "") ? .allow : .cancel)
+            _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction
+        ) async -> WKNavigationActionPolicy {
+            guard let url = navigationAction.request.url else { return .cancel }
+            return ["https", "http", "about"].contains(url.scheme ?? "") ? .allow : .cancel
         }
 
         func webView(

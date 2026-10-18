@@ -37,7 +37,7 @@ struct SXJBackupTests {
 
     @Test func excludesCredentialsFromExport() throws {
         let data = try backup().encoded()
-        let text = String(decoding: data, as: UTF8.self)
+        let text = try #require(String(bytes: data, encoding: .utf8))
         #expect(!text.contains("ipb_pass_hash"))
         #expect(!text.contains("ipb_member_id"))
     }

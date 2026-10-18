@@ -18,6 +18,7 @@ public struct ReadingSettingView: View {
 
     public var body: some View {
         Form {
+            SXJReaderSettingsView()
             Section {
                 Picker(.direction, selection: Binding(store.sharedSetting.readingDirection)) {
                     ForEach(ReadingDirection.allCases) {

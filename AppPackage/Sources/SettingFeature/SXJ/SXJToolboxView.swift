@@ -14,6 +14,7 @@ struct SXJToolboxView: View {
     @Shared(.galleryHistory) private var galleryHistory: [GalleryHistoryEntry]
     @Shared(.sxjBlockRules) private var blockRules: [SXJBlockRule]
     @Shared(.sxjLocalFavorites) private var localFavorites: [Gallery]
+    @Shared(.sxjReaderOptions) private var readerOptions: SXJReaderOptions
     @State private var showingFavorites = false
     @State private var exporting = false
     @State private var importing = false
@@ -78,7 +79,7 @@ struct SXJToolboxView: View {
                 setting: setting, searchFilter: searchFilter, globalFilter: globalFilter,
                 watchedFilter: watchedFilter, historyKeywords: historyKeywords,
                 quickSearchWords: quickSearchWords, galleryHistory: galleryHistory,
-                blockRules: blockRules, localFavorites: localFavorites
+                blockRules: blockRules, localFavorites: localFavorites, readerOptions: readerOptions
             ).encoded())
             exporting = true
             status = nil
@@ -113,6 +114,7 @@ struct SXJToolboxView: View {
         $galleryHistory.withLock { $0 = Array(backup.galleryHistory.prefix(GalleryHistoryEntry.historyCap)) }
         $blockRules.withLock { $0 = backup.blockRules }
         if let favorites = backup.localFavorites { $localFavorites.withLock { $0 = favorites } }
+        if let options = backup.readerOptions { $readerOptions.withLock { $0 = options } }
         pendingBackup = nil
         status = "备份已恢复。请重新打开列表查看更新后的数据。"
     }

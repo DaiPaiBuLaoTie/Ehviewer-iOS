@@ -16,6 +16,8 @@ private let logger = Logger(category: .init(describing: ReadingView.self))
 
 public struct ReadingView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
+    @SharedReader(.sxjReaderOptions) private var readerOptions: SXJReaderOptions
 
     @Bindable var store: StoreOf<ReadingReducer>
     // Write handle backing the reader's own controls (e.g. the ControlPanel slider). The reading-setting
@@ -51,7 +53,11 @@ public struct ReadingView: View {
     }
 
     private var backgroundColor: Color {
-        colorScheme == .light ? Color(.systemGray4) : Color(.systemGray6)
+        switch readerOptions.background {
+        case .system: return colorScheme == .light ? Color(.systemGray4) : Color(.systemGray6)
+        case .black: return .black
+        case .white: return .white
+        }
     }
 
     private var displayPreviewURLs: [Int: URL] {
@@ -108,6 +114,13 @@ public struct ReadingView: View {
             .animation(.default, value: gestureHandler.scale)
             .animation(.default, value: store.showsPanel)
             .statusBar(hidden: !store.showsPanel)
+            .background(SXJReaderScreenControl(options: readerOptions, active: scenePhase == .active))
+            .overlay(alignment: .bottomTrailing) {
+                if !store.showsPanel {
+                    SXJReaderStatusView(page: Int(pageHandler.sliderValue), total: store.gallery.pageCount)
+                        .padding(.trailing, 12).padding(.bottom, 8)
+                }
+            }
             .onDisappear {
                 // Progress is flushed in the reducer on `.onPerformDismiss` (before the presentation is
                 // torn down); an `onDisappear` send would arrive after the destination is nil'd and be

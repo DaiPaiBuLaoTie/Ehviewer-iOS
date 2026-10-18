@@ -44,6 +44,6 @@ struct SXJLocalFavoritesFeature {
                 return .none
             }
         }
-        .forEach(\.path, action: \.path, element: GalleryPath.init)
+        .forEach(\.path, action: \.path)
     }
 }
